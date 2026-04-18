@@ -7,7 +7,10 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import {
+  getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot,
+  collection, getDocs, writeBatch
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCpvrc0eDahxZa8MAHxmDHTkvTR7bWAIYs",
@@ -18,48 +21,114 @@ const firebaseConfig = {
   appId: "1:892248047419:web:0d730a91a6d1f1050b011e"
 };
 
-const app = initializeApp(firebaseConfig);
+const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db   = getFirestore(app);
 
-window.__db = db;
+window.__db   = db;
 window.__auth = auth;
 
+// ── Helpers de ruta ────────────────────────────────────────────────────────
+function userRef(uid)      { return doc(db, 'usuarios', uid); }
+function accountsCol(uid)  { return collection(db, 'usuarios', uid, 'accounts'); }
+function clientsCol(uid)   { return collection(db, 'usuarios', uid, 'clients'); }
+function settingsRef(uid)  { return doc(db, 'usuarios', uid, 'config', 'settings'); }
+
+// ── Migración: si hay datos en el doc raíz los mueve a subcolecciones ──────
+async function migrateIfNeeded(uid) {
+  const rootSnap = await getDoc(userRef(uid));
+  if (!rootSnap.exists()) return;
+  const data = rootSnap.data();
+  // Si ya tiene subcolecciones y el doc raíz solo tiene _migrated, salir
+  if (data._migrated) return;
+
+  const batch = writeBatch(db);
+  // Migrar accounts
+  (data.accounts || []).forEach(a => {
+    batch.set(doc(accountsCol(uid), a.id), a);
+  });
+  // Migrar clients
+  (data.clients || []).forEach(c => {
+    batch.set(doc(clientsCol(uid), c.id), c);
+  });
+  // Migrar settings
+  if (data.settings) {
+    batch.set(settingsRef(uid), data.settings);
+  }
+  // Marcar migración y limpiar arrays del doc raíz
+  batch.set(userRef(uid), { _migrated: true, uid });
+  await batch.commit();
+  console.log('✅ Migración a subcolecciones completada');
+}
+
+// ── Cargar datos desde subcolecciones ─────────────────────────────────────
+async function loadFromSubcollections(uid) {
+  const [accSnap, cliSnap, setSnap] = await Promise.all([
+    getDocs(accountsCol(uid)),
+    getDocs(clientsCol(uid)),
+    getDoc(settingsRef(uid))
+  ]);
+  const accounts  = accSnap.docs.map(d => d.data());
+  const clients   = cliSnap.docs.map(d => d.data());
+  const settings  = setSnap.exists() ? setSnap.data()
+    : { paymentMethods: [], whatsappPrefix: '51', freeSort: 'platform' };
+  window.__loadFromFirestore({ accounts, clients, settings });
+}
+
+// ── Auth listener ──────────────────────────────────────────────────────────
 onAuthStateChanged(auth, async user => {
   if (!user) { window.location.href = 'login.html'; return; }
 
-  // Mostrar email en sidebar
   const el = document.getElementById('userEmail');
   if (el) el.textContent = user.email;
 
-  // Ocultar loader, mostrar app
   document.getElementById('authLoader').style.display = 'none';
-  document.getElementById('appRoot').style.display = '';
+  document.getElementById('appRoot').style.display    = '';
 
-  // Cargar datos desde Firestore
-  const ref = doc(db, 'usuarios', user.uid);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    const data = snap.data();
-    window.__loadFromFirestore(data);
-  }
+  // Migrar si es necesario
+  await migrateIfNeeded(user.uid);
 
-  // Escuchar cambios en tiempo real
-  onSnapshot(ref, (snap) => {
-    if (snap.exists() && !window.__saving) {
-      window.__loadFromFirestore(snap.data());
-    }
+  // Cargar datos
+  await loadFromSubcollections(user.uid);
+
+  // Escuchar cambios en tiempo real en accounts y clients
+  onSnapshot(accountsCol(user.uid), () => {
+    if (!window.__saving) loadFromSubcollections(user.uid);
+  });
+  onSnapshot(clientsCol(user.uid), () => {
+    if (!window.__saving) loadFromSubcollections(user.uid);
   });
 });
 
+// ── Persistir: escribe cada account y client en su propio doc ─────────────
 window.__persistToFirestore = async function(stateData) {
   const user = auth.currentUser;
   if (!user) return;
   window.__saving = true;
   try {
-    await setDoc(doc(db, 'usuarios', user.uid), stateData);
+    const batch = writeBatch(db);
+    const uid   = user.uid;
+
+    // Settings
+    batch.set(settingsRef(uid), stateData.settings || {});
+
+    // Accounts — sobrescribir todos
+    const accSnap = await getDocs(accountsCol(uid));
+    accSnap.docs.forEach(d => batch.delete(d.ref));
+    (stateData.accounts || []).forEach(a => {
+      batch.set(doc(accountsCol(uid), a.id), a);
+    });
+
+    // Clients — sobrescribir todos
+    const cliSnap = await getDocs(clientsCol(uid));
+    cliSnap.docs.forEach(d => batch.delete(d.ref));
+    (stateData.clients || []).forEach(c => {
+      batch.set(doc(clientsCol(uid), c.id), c);
+    });
+
+    await batch.commit();
   } finally {
-    setTimeout(() => { window.__saving = false; }, 500);
+    setTimeout(() => { window.__saving = false; }, 800);
   }
 };
 

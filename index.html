@@ -4,11 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Gestión Streaming — Diseños Streaming</title>
-<!-- Firebase Auth Guard: redirige a login si no hay sesión -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, onAuthStateChanged, signOut }
-  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCpvrc0eDahxZa8MAHxmDHTkvTR7bWAIYs",
@@ -19,21 +18,50 @@ const firebaseConfig = {
   appId: "1:892248047419:web:0d730a91a6d1f1050b011e"
 };
 
-const app  = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
-onAuthStateChanged(auth, user => {
-  if (!user) {
-    window.location.href = 'login.html';
-    return;
-  }
-  // Muestra correo del usuario en la sidebar
+window.__db = db;
+window.__auth = auth;
+
+onAuthStateChanged(auth, async user => {
+  if (!user) { window.location.href = 'login.html'; return; }
+
+  // Mostrar email en sidebar
   const el = document.getElementById('userEmail');
   if (el) el.textContent = user.email;
-  // Oculta pantalla de carga
+
+  // Ocultar loader, mostrar app
   document.getElementById('authLoader').style.display = 'none';
-  document.getElementById('appRoot').style.display    = '';
+  document.getElementById('appRoot').style.display = '';
+
+  // Cargar datos desde Firestore
+  const ref = doc(db, 'usuarios', user.uid);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const data = snap.data();
+    window.__loadFromFirestore(data);
+  }
+
+  // Escuchar cambios en tiempo real
+  onSnapshot(ref, (snap) => {
+    if (snap.exists() && !window.__saving) {
+      window.__loadFromFirestore(snap.data());
+    }
+  });
 });
+
+window.__persistToFirestore = async function(stateData) {
+  const user = auth.currentUser;
+  if (!user) return;
+  window.__saving = true;
+  try {
+    await setDoc(doc(db, 'usuarios', user.uid), stateData);
+  } finally {
+    setTimeout(() => { window.__saving = false; }, 500);
+  }
+};
 
 window.firebaseSignOut = async function() {
   await signOut(auth);
@@ -2383,11 +2411,13 @@ body.modal-open{overflow:hidden}
 </style>
 </head>
 <body>
-<!-- Pantalla de carga mientras verifica sesión -->
+<!-- Loader mientras verifica sesión -->
 <div id="authLoader" style="position:fixed;inset:0;background:#07101c;display:grid;place-items:center;z-index:9999">
   <div style="text-align:center">
-    <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#8aa1ff,#7c5cff);display:grid;place-items:center;font-size:22px;font-weight:900;margin:0 auto 16px">▶</div>
-    <div style="color:#95a5cb;font-size:14px;font-family:Inter,sans-serif">Verificando sesión...</div>
+    <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#8aa1ff,#7c5cff);display:grid;place-items:center;font-size:24px;font-weight:900;margin:0 auto 16px;box-shadow:0 8px 24px rgba(124,92,255,.4)">▶</div>
+    <div style="color:#95a5cb;font-size:14px;font-family:Inter,sans-serif;margin-bottom:8px">Cargando tu gestión...</div>
+    <div style="width:32px;height:2px;background:linear-gradient(90deg,#8aa1ff,#7c5cff);margin:0 auto;border-radius:999px;animation:pulse 1.2s ease-in-out infinite" id="loaderBar"></div>
+    <style>@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}</style>
   </div>
 </div>
 
@@ -2726,29 +2756,31 @@ let flatpickrInstances=[];
 let renewingClientId=null;
 
 function load(){
-  try{
-    const raw=localStorage.getItem(KEY);
-    if(raw){
-      const data=JSON.parse(raw);
-      data.accounts=(data.accounts||[]).map(a=>({
-        id:a.id||uid(), platform:a.platform||'', provider:a.provider||'', providerWhatsapp:a.providerWhatsapp||'',
-        capacity:Number(a.capacity||0), email:a.email||'', password:a.password||'', dueDate:a.dueDate||'',
-        notes:a.notes||''
-      }));
-      data.clients=(data.clients||[]).map(c=>({
-        id:c.id||uid(), name:c.name||'', whatsapp:c.whatsapp||'', accountId:c.accountId||'', platform:c.platform||'',
-        profile:c.profile||'', pin:c.pin||'', dueDate:c.dueDate||'', state:c.state||'Activo', notes:c.notes||''
-      }));
-      let paymentMethods=[];
-      if(Array.isArray(data.settings?.paymentMethods)) paymentMethods=data.settings.paymentMethods;
-      else if(typeof data.settings?.paymentMethods==='string' && data.settings.paymentMethods.trim()) paymentMethods=[{method:'Pago',number:data.settings.paymentMethods.trim(),holder:''}];
-      data.settings={paymentMethods:paymentMethods.map(p=>({method:p.method||'',number:p.number||'',holder:p.holder||''})), whatsappPrefix:String(data.settings?.whatsappPrefix||'51').replace(/\D+/g,''), freeSort:data.settings?.freeSort||'platform'};
-      return data;
-    }
-  }catch(e){}
   return {accounts:[],clients:[],settings:{paymentMethods:[],whatsappPrefix:'51',freeSort:'platform'}};
 }
-function persist(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function normalizeLoaded(data){
+  data.accounts=(data.accounts||[]).map(a=>({
+    id:a.id||uid(), platform:a.platform||'', provider:a.provider||'', providerWhatsapp:a.providerWhatsapp||'',
+    capacity:Number(a.capacity||0), email:a.email||'', password:a.password||'', dueDate:a.dueDate||'',
+    notes:a.notes||''
+  }));
+  data.clients=(data.clients||[]).map(c=>({
+    id:c.id||uid(), name:c.name||'', whatsapp:c.whatsapp||'', accountId:c.accountId||'', platform:c.platform||'',
+    profile:c.profile||'', pin:c.pin||'', dueDate:c.dueDate||'', state:c.state||'Activo', notes:c.notes||''
+  }));
+  let paymentMethods=[];
+  if(Array.isArray(data.settings?.paymentMethods)) paymentMethods=data.settings.paymentMethods;
+  else if(typeof data.settings?.paymentMethods==='string' && data.settings.paymentMethods.trim()) paymentMethods=[{method:'Pago',number:data.settings.paymentMethods.trim(),holder:''}];
+  data.settings={paymentMethods:paymentMethods.map(p=>({method:p.method||'',number:p.number||'',holder:p.holder||''})), whatsappPrefix:String(data.settings?.whatsappPrefix||'51').replace(/\D+/g,''), freeSort:data.settings?.freeSort||'platform'};
+  return data;
+}
+window.__loadFromFirestore = function(data){
+  state = normalizeLoaded(JSON.parse(JSON.stringify(data)));
+  refresh();
+};
+function persist(){
+  if(window.__persistToFirestore) window.__persistToFirestore(JSON.parse(JSON.stringify(state)));
+}
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function todayPlus(days){ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
@@ -3882,7 +3914,7 @@ $('#saveClientBtn').onclick=()=>{
 $('#openSettingsBtn').onclick=()=>{ if(!state.settings.paymentMethods) state.settings.paymentMethods=[]; $('#waPrefix').value=state.settings.whatsappPrefix||'51'; $('#settingsFreeSort').value=state.settings.freeSort||'platform'; renderPaymentRows(); openModal('settingsModalWrap'); };
 $('#saveSettingsBtn').onclick=()=>{ state.settings.paymentMethods=(state.settings.paymentMethods||[]).filter(p=>p.method||p.number||p.holder); state.settings.whatsappPrefix=String($('#waPrefix').value||'').replace(/\D+/g,''); state.settings.freeSort=$('#settingsFreeSort').value||'platform'; $('#freeSort').value=state.settings.freeSort; closeModal('settingsModalWrap'); refresh(); };
 $('#exportBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='gestion-streaming-backup.json'; a.click(); URL.revokeObjectURL(a.href); };
-$('#importFile').onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>{ try{ state=loadImported(JSON.parse(reader.result)); refresh(); } catch{ alert('Archivo inválido'); } e.target.value=''; }; reader.readAsText(f); };
+$('#importFile').onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>{ try{ state=loadImported(JSON.parse(reader.result)); persist(); refresh(); alert('✅ Datos importados y guardados en la nube'); } catch{ alert('Archivo inválido'); } e.target.value=''; }; reader.readAsText(f); };
 function loadImported(data){
   const imported={accounts:[],clients:[],settings:{paymentMethods:[],whatsappPrefix:'51',freeSort:'platform'}};
   imported.accounts=(data.accounts||[]).map(a=>({ id:a.id||uid(), platform:a.platform||'', provider:a.provider||'', providerWhatsapp:a.providerWhatsapp||'', capacity:Number(a.capacity||0), email:a.email||'', password:a.password||'', dueDate:a.dueDate||'', notes:a.notes||'' }));

@@ -2883,7 +2883,7 @@ function effectiveClientState(c){
   if(dd<=3) return 'Por vencer';
   return 'Activo';
 }
-function activeOccupants(accountId){ return state.clients.filter(c=>c.accountId===accountId && effectiveClientState(c)!=='No renovó'); }
+function activeOccupants(accountId){ return state.clients.filter(c=>c.accountId===accountId); }
 function accountAvailability(account){ const used=activeOccupants(account.id).length; return {used,free:Math.max(0,Number(account.capacity||0)-used)}; }
 function freeProfiles(account){
   const used=new Set(activeOccupants(account.id).map(c=>String(c.profile).trim()).filter(Boolean));

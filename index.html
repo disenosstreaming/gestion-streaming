@@ -3666,7 +3666,8 @@ function refresh(){
 function openModal(id){ if(typeof closeAllActionMenus==='function') closeAllActionMenus(); $('#'+id).classList.add('show'); document.body.classList.add('modal-open'); }
 function closeModal(id){ $('#'+id).classList.remove('show'); if(id==='renewModalWrap') renewingClientId=null; if(!document.querySelector('.modal-backdrop.show')) document.body.classList.remove('modal-open'); }
 function clearClientForm(){ editingClientId=null; $('#clientModalTitle').textContent='Nuevo cliente'; $('#cName').value=''; $('#cWhatsapp').value=''; $('#cPlatform').value=''; $('#cProfile').value=''; $('#cPin').value=''; $('#cState').value='Activo'; $('#cNotes').value=''; renderAccountOptions(); $('#cDueDisplay').value=todayPlus(30); }
-function clearAccountForm(){ editingAccountId=null; $('#accountModalTitle').textContent='Nueva cuenta madre'; $('#aPlatformSelect').value='Netflix'; $('#aPlatformCustom').classList.add('hidden'); $('#aPlatformCustom').value=''; $('#aProvider').value=''; $('#aProviderWhatsapp').value=''; $('#aEmail').value=''; $('#aPassword').value=''; $('#aCapacity').value='5'; $('#aDueDisplay').value=todayPlus(30); $('#aNotes').value=''; const n=$('#aNotifyClients'); if(n) n.checked=true; }
+function populateAccountPlatformSelect(){ const sel=$('#aPlatformSelect'); if(!sel.options.length){ sel.innerHTML=PLATFORM_OPTIONS.map(p=>`<option value="${p}">${p}</option>`).join(''); } }
+function clearAccountForm(){ editingAccountId=null; populateAccountPlatformSelect(); $('#accountModalTitle').textContent='Nueva cuenta madre'; $('#aPlatformSelect').value='Netflix'; $('#aPlatformCustom').classList.add('hidden'); $('#aPlatformCustom').value=''; $('#aProvider').value=''; $('#aProviderWhatsapp').value=''; $('#aEmail').value=''; $('#aPassword').value=''; $('#aCapacity').value='5'; $('#aDueDisplay').value=todayPlus(30); $('#aNotes').value=''; const n=$('#aNotifyClients'); if(n) n.checked=true; }
 function initDatepickers(){
   flatpickrInstances.forEach(i=>i.destroy());
   flatpickrInstances=[];
@@ -3704,6 +3705,7 @@ window.editAccount=(id, forceNotify=false)=>{
   const a=state.accounts.find(x=>x.id===id); if(!a) return;
   editingAccountId=id; pendingNotifyAfterSave=!!forceNotify;
   $('#accountModalTitle').textContent=forceNotify ? 'Reemplazar acceso' : 'Editar cuenta madre';
+  populateAccountPlatformSelect();
   $('#aProvider').value=a.provider||''; $('#aProviderWhatsapp').value=a.providerWhatsapp||''; $('#aCapacity').value=a.capacity||5; $('#aEmail').value=a.email||''; $('#aPassword').value=a.password||''; $('#aDueDisplay').value=a.dueDate||''; $('#aNotes').value=a.notes||'';
   const notifyEl=$('#aNotifyClients'); if(notifyEl) notifyEl.checked=true;
   if(PLATFORM_OPTIONS.includes(a.platform)){ $('#aPlatformSelect').value=a.platform; $('#aPlatformCustom').classList.add('hidden'); $('#aPlatformCustom').value=''; }

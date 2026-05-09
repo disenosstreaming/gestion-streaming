@@ -92,44 +92,72 @@ onAuthStateChanged(auth, async user => {
   await loadFromSubcollections(user.uid);
 
   // Escuchar cambios en tiempo real en accounts y clients
-  onSnapshot(accountsCol(user.uid), () => {
-    if (!window.__saving) loadFromSubcollections(user.uid);
+  // Solo recargar si el cambio viene de otra sesión (no de nuestras propias escrituras)
+  onSnapshot(accountsCol(user.uid), (snap) => {
+    if (!window.__saving && !window.__loadingFromFirestore) {
+      const fromServer = snap.metadata.hasPendingWrites === false;
+      if (fromServer) loadFromSubcollections(user.uid);
+    }
   });
-  onSnapshot(clientsCol(user.uid), () => {
-    if (!window.__saving) loadFromSubcollections(user.uid);
+  onSnapshot(clientsCol(user.uid), (snap) => {
+    if (!window.__saving && !window.__loadingFromFirestore) {
+      const fromServer = snap.metadata.hasPendingWrites === false;
+      if (fromServer) loadFromSubcollections(user.uid);
+    }
   });
 });
 
 // ── Persistir: escribe cada account y client en su propio doc ─────────────
+window.__persistDebounceTimer = null;
 window.__persistToFirestore = async function(stateData) {
   const user = auth.currentUser;
   if (!user) return;
-  window.__saving = true;
-  try {
-    const batch = writeBatch(db);
-    const uid   = user.uid;
 
-    // Settings
-    batch.set(settingsRef(uid), stateData.settings || {});
+  // Debounce: si hay una escritura pendiente, cancelarla y usar la más reciente
+  if (window.__persistDebounceTimer) clearTimeout(window.__persistDebounceTimer);
 
-    // Accounts — sobrescribir todos
-    const accSnap = await getDocs(accountsCol(uid));
-    accSnap.docs.forEach(d => batch.delete(d.ref));
-    (stateData.accounts || []).forEach(a => {
-      batch.set(doc(accountsCol(uid), a.id), a);
-    });
+  return new Promise((resolve) => {
+    window.__persistDebounceTimer = setTimeout(async () => {
+      window.__persistDebounceTimer = null;
+      window.__saving = true;
+      try {
+        const uid = user.uid;
 
-    // Clients — sobrescribir todos
-    const cliSnap = await getDocs(clientsCol(uid));
-    cliSnap.docs.forEach(d => batch.delete(d.ref));
-    (stateData.clients || []).forEach(c => {
-      batch.set(doc(clientsCol(uid), c.id), c);
-    });
+        // Leer docs existentes ANTES de armar el batch
+        const [accSnap, cliSnap] = await Promise.all([
+          getDocs(accountsCol(uid)),
+          getDocs(clientsCol(uid))
+        ]);
 
-    await batch.commit();
-  } finally {
-    setTimeout(() => { window.__saving = false; }, 800);
-  }
+        const batch = writeBatch(db);
+
+        // Settings
+        batch.set(settingsRef(uid), stateData.settings || {});
+
+        // Accounts — borrar existentes + agregar actuales
+        accSnap.docs.forEach(d => batch.delete(d.ref));
+        (stateData.accounts || []).forEach(a => {
+          batch.set(doc(accountsCol(uid), a.id), a);
+        });
+
+        // Clients — borrar existentes + agregar actuales
+        cliSnap.docs.forEach(d => batch.delete(d.ref));
+        (stateData.clients || []).forEach(c => {
+          batch.set(doc(clientsCol(uid), c.id), c);
+        });
+
+        await batch.commit();
+        console.log('✅ Datos guardados en Firebase');
+      } catch (err) {
+        console.error('❌ Error guardando en Firebase:', err);
+        alert('Error al guardar los datos. Verifica tu conexión a internet e intenta de nuevo.');
+      } finally {
+        // Esperar a que Firestore propague los snapshots antes de reactivar listeners
+        setTimeout(() => { window.__saving = false; }, 1500);
+      }
+      resolve();
+    }, 300); // 300ms debounce
+  });
 };
 
 window.firebaseSignOut = async function() {
@@ -2919,10 +2947,13 @@ function normalizeLoaded(data){
   return data;
 }
 window.__loadFromFirestore = function(data){
+  window.__loadingFromFirestore = true;
   state = normalizeLoaded(JSON.parse(JSON.stringify(data)));
   refresh();
+  window.__loadingFromFirestore = false;
 };
 function persist(){
+  if(window.__loadingFromFirestore) return; // No re-guardar datos que acabamos de cargar
   if(window.__persistToFirestore) window.__persistToFirestore(JSON.parse(JSON.stringify(state)));
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }

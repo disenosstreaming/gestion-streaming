@@ -111,53 +111,50 @@ onAuthStateChanged(auth, async user => {
 window.__persistDebounceTimer = null;
 window.__persistToFirestore = async function(stateData) {
   const user = auth.currentUser;
-  if (!user) return;
+  if (!user) { window.__saving = false; return; }
 
   // Debounce: si hay una escritura pendiente, cancelarla y usar la más reciente
+  // NOTA: __saving YA está en true (lo puso persist()), NO lo tocamos aquí
   if (window.__persistDebounceTimer) clearTimeout(window.__persistDebounceTimer);
 
-  return new Promise((resolve) => {
-    window.__persistDebounceTimer = setTimeout(async () => {
-      window.__persistDebounceTimer = null;
-      window.__saving = true;
-      try {
-        const uid = user.uid;
+  window.__persistDebounceTimer = setTimeout(async () => {
+    window.__persistDebounceTimer = null;
+    try {
+      const uid = user.uid;
 
-        // Leer docs existentes ANTES de armar el batch
-        const [accSnap, cliSnap] = await Promise.all([
-          getDocs(accountsCol(uid)),
-          getDocs(clientsCol(uid))
-        ]);
+      // Leer docs existentes ANTES de armar el batch
+      const [accSnap, cliSnap] = await Promise.all([
+        getDocs(accountsCol(uid)),
+        getDocs(clientsCol(uid))
+      ]);
 
-        const batch = writeBatch(db);
+      const batch = writeBatch(db);
 
-        // Settings
-        batch.set(settingsRef(uid), stateData.settings || {});
+      // Settings
+      batch.set(settingsRef(uid), stateData.settings || {});
 
-        // Accounts — borrar existentes + agregar actuales
-        accSnap.docs.forEach(d => batch.delete(d.ref));
-        (stateData.accounts || []).forEach(a => {
-          batch.set(doc(accountsCol(uid), a.id), a);
-        });
+      // Accounts — borrar existentes + agregar actuales
+      accSnap.docs.forEach(d => batch.delete(d.ref));
+      (stateData.accounts || []).forEach(a => {
+        batch.set(doc(accountsCol(uid), a.id), a);
+      });
 
-        // Clients — borrar existentes + agregar actuales
-        cliSnap.docs.forEach(d => batch.delete(d.ref));
-        (stateData.clients || []).forEach(c => {
-          batch.set(doc(clientsCol(uid), c.id), c);
-        });
+      // Clients — borrar existentes + agregar actuales
+      cliSnap.docs.forEach(d => batch.delete(d.ref));
+      (stateData.clients || []).forEach(c => {
+        batch.set(doc(clientsCol(uid), c.id), c);
+      });
 
-        await batch.commit();
-        console.log('✅ Datos guardados en Firebase');
-      } catch (err) {
-        console.error('❌ Error guardando en Firebase:', err);
-        alert('Error al guardar los datos. Verifica tu conexión a internet e intenta de nuevo.');
-      } finally {
-        // Esperar a que Firestore propague los snapshots antes de reactivar listeners
-        setTimeout(() => { window.__saving = false; }, 1500);
-      }
-      resolve();
-    }, 300); // 300ms debounce
-  });
+      await batch.commit();
+      console.log('✅ Datos guardados en Firebase');
+    } catch (err) {
+      console.error('❌ Error guardando en Firebase:', err);
+      alert('⚠️ Error al guardar. Verifica tu conexión e intenta de nuevo.');
+    } finally {
+      // Esperar a que Firestore propague los snapshots antes de reactivar listeners
+      setTimeout(() => { window.__saving = false; }, 2000);
+    }
+  }, 350);
 };
 
 window.firebaseSignOut = async function() {
@@ -2928,6 +2925,13 @@ let flatpickrInstances=[];
 let renewingClientId=null;
 
 function load(){
+  // Intentar cargar desde localStorage como respaldo (Firebase lo sobreescribirá al cargar)
+  try{
+    const raw=localStorage.getItem(KEY);
+    if(raw){
+      return normalizeLoaded(JSON.parse(raw));
+    }
+  }catch(e){}
   return {accounts:[],clients:[],settings:{paymentMethods:[],whatsappPrefix:'51',freeSort:'platform'}};
 }
 function normalizeLoaded(data){
@@ -2949,11 +2953,17 @@ function normalizeLoaded(data){
 window.__loadFromFirestore = function(data){
   window.__loadingFromFirestore = true;
   state = normalizeLoaded(JSON.parse(JSON.stringify(data)));
+  // Actualizar localStorage como respaldo
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
   refresh();
   window.__loadingFromFirestore = false;
 };
 function persist(){
-  if(window.__loadingFromFirestore) return; // No re-guardar datos que acabamos de cargar
+  if(window.__loadingFromFirestore) return;
+  // Guardar en localStorage como respaldo inmediato
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
+  // Marcar INMEDIATAMENTE que hay escritura pendiente para bloquear onSnapshot
+  window.__saving = true;
   if(window.__persistToFirestore) window.__persistToFirestore(JSON.parse(JSON.stringify(state)));
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }

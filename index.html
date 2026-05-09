@@ -107,14 +107,13 @@ onAuthStateChanged(auth, async user => {
   });
 });
 
-// ── Persistir: escribe cada account y client en su propio doc ─────────────
+// ── Persistir: escribe solo lo que cambió ────────────────────────────────
 window.__persistDebounceTimer = null;
 window.__persistToFirestore = async function(stateData) {
   const user = auth.currentUser;
   if (!user) { window.__saving = false; return; }
 
-  // Debounce: si hay una escritura pendiente, cancelarla y usar la más reciente
-  // NOTA: __saving YA está en true (lo puso persist()), NO lo tocamos aquí
+  // Debounce: cancelar escritura pendiente y usar la más reciente
   if (window.__persistDebounceTimer) clearTimeout(window.__persistDebounceTimer);
 
   window.__persistDebounceTimer = setTimeout(async () => {
@@ -122,36 +121,61 @@ window.__persistToFirestore = async function(stateData) {
     try {
       const uid = user.uid;
 
-      // Leer docs existentes ANTES de armar el batch
+      // Leer IDs existentes en Firestore
       const [accSnap, cliSnap] = await Promise.all([
         getDocs(accountsCol(uid)),
         getDocs(clientsCol(uid))
       ]);
 
-      const batch = writeBatch(db);
+      const existingAccIds = new Set(accSnap.docs.map(d => d.id));
+      const existingCliIds = new Set(cliSnap.docs.map(d => d.id));
+      const currentAccIds  = new Set((stateData.accounts || []).map(a => a.id));
+      const currentCliIds  = new Set((stateData.clients  || []).map(c => c.id));
 
-      // Settings
-      batch.set(settingsRef(uid), stateData.settings || {});
+      // Armar lista de operaciones
+      const ops = [];
 
-      // Accounts — borrar existentes + agregar actuales
-      accSnap.docs.forEach(d => batch.delete(d.ref));
-      (stateData.accounts || []).forEach(a => {
-        batch.set(doc(accountsCol(uid), a.id), a);
-      });
+      // Settings — siempre escribir
+      ops.push({ type: 'set', ref: settingsRef(uid), data: stateData.settings || {} });
 
-      // Clients — borrar existentes + agregar actuales
-      cliSnap.docs.forEach(d => batch.delete(d.ref));
-      (stateData.clients || []).forEach(c => {
-        batch.set(doc(clientsCol(uid), c.id), c);
-      });
+      // Accounts: setDoc para cada uno (crea o sobreescribe)
+      for (const a of (stateData.accounts || [])) {
+        ops.push({ type: 'set', ref: doc(accountsCol(uid), a.id), data: a });
+      }
+      // Accounts que ya no existen → borrar
+      for (const id of existingAccIds) {
+        if (!currentAccIds.has(id)) {
+          ops.push({ type: 'delete', ref: doc(accountsCol(uid), id) });
+        }
+      }
 
-      await batch.commit();
-      console.log('✅ Datos guardados en Firebase');
+      // Clients: setDoc para cada uno
+      for (const c of (stateData.clients || [])) {
+        ops.push({ type: 'set', ref: doc(clientsCol(uid), c.id), data: c });
+      }
+      // Clients que ya no existen → borrar
+      for (const id of existingCliIds) {
+        if (!currentCliIds.has(id)) {
+          ops.push({ type: 'delete', ref: doc(clientsCol(uid), id) });
+        }
+      }
+
+      // Ejecutar en batches de 450 (límite Firestore = 500)
+      for (let i = 0; i < ops.length; i += 450) {
+        const chunk = ops.slice(i, i + 450);
+        const batch = writeBatch(db);
+        for (const op of chunk) {
+          if (op.type === 'set') batch.set(op.ref, op.data);
+          else batch.delete(op.ref);
+        }
+        await batch.commit();
+      }
+
+      console.log('✅ Datos guardados en Firebase (' + ops.length + ' ops)');
     } catch (err) {
       console.error('❌ Error guardando en Firebase:', err);
-      alert('⚠️ Error al guardar. Verifica tu conexión e intenta de nuevo.');
+      alert('⚠️ Error al guardar: ' + (err.message || 'Verifica tu conexión.'));
     } finally {
-      // Esperar a que Firestore propague los snapshots antes de reactivar listeners
       setTimeout(() => { window.__saving = false; }, 2000);
     }
   }, 350);

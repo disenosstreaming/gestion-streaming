@@ -185,6 +185,45 @@ window.firebaseSignOut = async function() {
   await signOut(auth);
   window.location.href = 'login.html';
 };
+
+// ── Escritura de documento individual (1 op) ─────────────────────────────
+window.__persistSingleDoc = async function(colName, docData) {
+  const user = auth.currentUser;
+  if (!user) return;
+  try {
+    const uid = user.uid;
+    const colRef = colName === 'accounts' ? accountsCol(uid) : clientsCol(uid);
+    await setDoc(doc(colRef, docData.id), docData);
+    console.log('✅ Doc guardado:', colName, docData.id);
+  } catch (err) {
+    console.error('❌ Error guardando doc:', err);
+    alert('⚠️ Error al guardar: ' + (err.message || 'Verifica tu conexión.'));
+  }
+};
+
+window.__persistDeleteDoc = async function(colName, docId) {
+  const user = auth.currentUser;
+  if (!user) return;
+  try {
+    const uid = user.uid;
+    const colRef = colName === 'accounts' ? accountsCol(uid) : clientsCol(uid);
+    await deleteDoc(doc(colRef, docId));
+    console.log('✅ Doc eliminado:', colName, docId);
+  } catch (err) {
+    console.error('❌ Error eliminando doc:', err);
+  }
+};
+
+window.__persistSettingsDoc = async function(settingsData) {
+  const user = auth.currentUser;
+  if (!user) return;
+  try {
+    await setDoc(settingsRef(user.uid), settingsData || {});
+    console.log('✅ Settings guardados');
+  } catch (err) {
+    console.error('❌ Error guardando settings:', err);
+  }
+};
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2990,6 +3029,30 @@ function persist(){
   window.__saving = true;
   if(window.__persistToFirestore) window.__persistToFirestore(JSON.parse(JSON.stringify(state)));
 }
+// ── Guardar UN solo documento (1-2 ops en vez de 468) ──
+function persistDoc(colName, docData){
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
+  if(window.__persistSingleDoc) window.__persistSingleDoc(colName, docData);
+}
+function persistDeleteDoc(colName, docId){
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
+  if(window.__persistDeleteDoc) window.__persistDeleteDoc(colName, docId);
+}
+function persistSettings(){
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
+  if(window.__persistSettingsDoc) window.__persistSettingsDoc(state.settings);
+}
+// ── Refresh sin persistir (cuando ya se guardó el doc individual) ──
+function refreshUI(){
+  cleanupFloatingActionMenusBeforeRender();
+  renderStats();
+  renderHome();
+  renderClients();
+  renderAccounts();
+  renderFree();
+  renderRenewals();
+  initDatepickers();
+}
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function todayPlus(days){ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
@@ -3719,7 +3782,6 @@ function renderPaymentRows(){
 
 function refresh(){
   cleanupFloatingActionMenusBeforeRender();
-  persist();
   renderStats();
   renderHome();
   renderClients();
@@ -3777,13 +3839,16 @@ window.editAccount=(id, forceNotify=false)=>{
   else { $('#aPlatformSelect').value='Otro'; $('#aPlatformCustom').classList.remove('hidden'); $('#aPlatformCustom').value=a.platform||''; }
   openModal('accountModalWrap'); initDatepickers();
 };
-window.deleteClient=(id)=>{ if(!confirm('¿Borrar cliente?')) return; state.clients=state.clients.filter(c=>c.id!==id); refresh(); switchView('inicioView'); };
+window.deleteClient=(id)=>{ if(!confirm('¿Borrar cliente?')) return; state.clients=state.clients.filter(c=>c.id!==id); persistDeleteDoc('clients', id); refreshUI(); switchView('inicioView'); };
 window.deleteAccount=(id)=>{
   if(state.clients.some(c=>c.accountId===id && effectiveClientState(c)!=='No renovó')){ alert('Primero libera o mueve los clientes activos de esta cuenta.'); return; }
   if(!confirm('¿Borrar cuenta madre?')) return;
+  const orphanClients=state.clients.filter(c=>c.accountId===id);
   state.accounts=state.accounts.filter(a=>a.id!==id);
   state.clients=state.clients.filter(c=>c.accountId!==id);
-  refresh();
+  persistDeleteDoc('accounts', id);
+  orphanClients.forEach(c=>persistDeleteDoc('clients', c.id));
+  refreshUI();
 };
 function dateToLocalString(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -3827,7 +3892,7 @@ function applyRenewalDate(clientId, newDate){
   c.state='Activo';
   renewingClientId=null;
   closeModal('renewModalWrap');
-  refresh();
+  persistDoc('clients', c); refreshUI();
 }
 function renewUnitLabel(unit, amount){
   const qty=Number(amount)||1;
@@ -3887,7 +3952,7 @@ window.applyExactRenewClient=()=>{
   if(!c) return;
   applyRenewalDate(c.id, ($('#renewExactDate')?.value||'').trim());
 };
-window.setNoRenew=(id)=>{ const c=state.clients.find(x=>x.id===id); if(!c) return; c.state='No renovó'; refresh(); };
+window.setNoRenew=(id)=>{ const c=state.clients.find(x=>x.id===id); if(!c) return; c.state='No renovó'; persistDoc('clients', c); refreshUI(); };
 window.prefillClientFromAccount=(id,forcedProfile='')=>{ clearClientForm(); renderAccountOptions(id); $('#cAccount').value=id; const acc=state.accounts.find(a=>a.id===id); $('#cPlatform').value=acc?.platform||''; $('#cProfile').value=forcedProfile||nextProfileSuggestion(id)||''; switchView('clientesView'); openModal('clientModalWrap'); initDatepickers(); };
 window.viewAccountClients=(id)=>{ switchView('clientesView'); const f=$('#clientAccountFilter'); if(f){ f.value=id; renderClients(); } window.scrollTo({top:0,behavior:'smooth'}); };
 window.sendWhatsapp=(id)=>{
@@ -4074,7 +4139,7 @@ $('#clientStatusFilter').onchange=renderClients;
 $('#clientAccountFilter').onchange=renderClients;
 $('#accountSearch').oninput=renderAccounts;
 
-$('#freeSort').onchange=()=>{ state.settings.freeSort=$('#freeSort').value; renderFree(); persist(); };
+$('#freeSort').onchange=()=>{ state.settings.freeSort=$('#freeSort').value; renderFree(); persistSettings(); };
 $('#cAccount').onchange=()=>{ const acc=state.accounts.find(a=>a.id===$('#cAccount').value); $('#cPlatform').value=acc?.platform||''; if(!editingClientId) $('#cProfile').value=nextProfileSuggestion(acc?.id)||''; };
 $('#aPlatformSelect').onchange=()=>{ $('#aPlatformCustom').classList.toggle('hidden',$('#aPlatformSelect').value!=='Otro'); };
 $('#addPaymentBtn').onclick=()=>{ state.settings.paymentMethods.push({method:'',number:'',holder:''}); renderPaymentRows(); };
@@ -4100,7 +4165,7 @@ $('#saveAccountBtn').onclick=()=>{
   const credentialsChanged=!!oldAccount && (oldAccount.email!==data.email || oldAccount.password!==data.password || oldAccount.platform!==data.platform);
   const shouldNotify=!!$('#aNotifyClients')?.checked;
   if(editingAccountId) state.accounts=state.accounts.map(a=>a.id===editingAccountId?data:a); else state.accounts.unshift(data);
-  closeModal('accountModalWrap'); clearAccountForm(); refresh();
+  closeModal('accountModalWrap'); clearAccountForm(); persistDoc('accounts', data); refreshUI();
   if(credentialsChanged && accountClientsForNotify(data.id).length && (shouldNotify || pendingNotifyAfterSave)){
     setTimeout(()=>openAccountClientsModal(data.id),120);
   }else if(credentialsChanged && accountClientsForNotify(data.id).length && !shouldNotify){
@@ -4120,10 +4185,10 @@ $('#saveClientBtn').onclick=()=>{
     dueDate:$('#cDueDisplay').value.trim(), state:$('#cState').value, notes:$('#cNotes').value.trim()
   };
   if(editingClientId) state.clients=state.clients.map(c=>c.id===editingClientId?data:c); else state.clients.unshift(data);
-  closeModal('clientModalWrap'); clearClientForm(); refresh();
+  closeModal('clientModalWrap'); clearClientForm(); persistDoc('clients', data); refreshUI();
 };
 $('#openSettingsBtn').onclick=()=>{ if(!state.settings.paymentMethods) state.settings.paymentMethods=[]; $('#waPrefix').value=state.settings.whatsappPrefix||'51'; $('#settingsFreeSort').value=state.settings.freeSort||'platform'; renderPaymentRows(); openModal('settingsModalWrap'); };
-$('#saveSettingsBtn').onclick=()=>{ state.settings.paymentMethods=(state.settings.paymentMethods||[]).filter(p=>p.method||p.number||p.holder); state.settings.whatsappPrefix=String($('#waPrefix').value||'').replace(/\D+/g,''); state.settings.freeSort=$('#settingsFreeSort').value||'platform'; $('#freeSort').value=state.settings.freeSort; closeModal('settingsModalWrap'); refresh(); };
+$('#saveSettingsBtn').onclick=()=>{ state.settings.paymentMethods=(state.settings.paymentMethods||[]).filter(p=>p.method||p.number||p.holder); state.settings.whatsappPrefix=String($('#waPrefix').value||'').replace(/\D+/g,''); state.settings.freeSort=$('#settingsFreeSort').value||'platform'; $('#freeSort').value=state.settings.freeSort; closeModal('settingsModalWrap'); persistSettings(); refreshUI(); };
 $('#exportBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='gestion-streaming-backup.json'; a.click(); URL.revokeObjectURL(a.href); };
 $('#importFile').onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>{ try{ state=loadImported(JSON.parse(reader.result)); persist(); refresh(); alert('✅ Datos importados y guardados en la nube'); } catch{ alert('Archivo inválido'); } e.target.value=''; }; reader.readAsText(f); };
 function loadImported(data){

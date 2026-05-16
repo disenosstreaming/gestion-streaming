@@ -109,6 +109,38 @@ input::placeholder{color:#4a5a7a}
   display:none;
 }
 .error.show{display:block}
+.success{
+  margin-top:16px;
+  padding:12px 14px;
+  border-radius:12px;
+  background:rgba(74,222,128,.1);
+  border:1px solid rgba(74,222,128,.25);
+  color:#bbf7d0;
+  font-size:13px;
+  display:none;
+}
+.success.show{display:block}
+.auth-links{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:18px;
+  font-size:13px;
+}
+.auth-links a,
+.link-btn{
+  color:#b8c5ff;
+  text-decoration:none;
+  font-weight:700;
+}
+.auth-links a:hover,
+.link-btn:hover{text-decoration:underline}
+.link-btn{
+  border:0;
+  padding:0;
+  background:transparent;
+  cursor:pointer;
+}
 
 .spinner{
   display:inline-block;
@@ -153,6 +185,12 @@ input::placeholder{color:#4a5a7a}
   <button class="btn" id="loginBtn" onclick="handleLogin()">Ingresar</button>
 
   <div class="error" id="errorMsg"></div>
+  <div class="success" id="successMsg"></div>
+
+  <div class="auth-links">
+    <a href="register.html">Crear cuenta</a>
+    <button class="link-btn" type="button" onclick="handlePasswordReset()">Olvidé mi contraseña</button>
+  </div>
 
   <div class="footer">Diseños Streaming © 2025 · Acceso restringido</div>
 </div>
@@ -160,7 +198,7 @@ input::placeholder{color:#4a5a7a}
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged }
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 const firebaseConfig = {
@@ -174,6 +212,14 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+const params = new URLSearchParams(window.location.search);
+if (params.get('registered') === '1') {
+  showSuccess('Cuenta creada. Revisa tu correo para verificarla y luego inicia sesión.');
+}
+if (params.get('reset') === '1') {
+  showSuccess('Te enviamos el enlace para restablecer tu contraseña.');
+}
 
 // Si ya está logueado, redirige directo
 onAuthStateChanged(auth, user => {
@@ -205,8 +251,31 @@ window.handleLogin = async function() {
   }
 };
 
+window.handlePasswordReset = async function() {
+  const email = document.getElementById('email').value.trim();
+  if (!email) {
+    showError('Escribe tu correo para enviarte el enlace de recuperación.');
+    return;
+  }
+
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showSuccess('Te enviamos un enlace para restablecer tu contraseña.');
+  } catch (err) {
+    showError(friendlyError(err.code));
+  }
+};
+
 function showError(msg) {
   const el = document.getElementById('errorMsg');
+  document.getElementById('successMsg').classList.remove('show');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+function showSuccess(msg) {
+  const el = document.getElementById('successMsg');
+  document.getElementById('errorMsg').classList.remove('show');
   el.textContent = msg;
   el.classList.add('show');
 }

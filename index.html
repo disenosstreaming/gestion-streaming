@@ -311,6 +311,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .mini{padding:8px 10px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:var(--text);cursor:pointer;font-size:12px;font-weight:800}
 .mini:hover{background:rgba(255,255,255,.07)}
 .mini.wa{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.24);color:#dcfce7}
+.mini.notified{background:rgba(138,161,255,.14);border-color:rgba(138,161,255,.28);color:#dbe3ff}
 .mini.link{background:rgba(138,161,255,.1);border-color:rgba(138,161,255,.18)}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}
 .account-card{position:relative;padding:14px;border-radius:18px;background:linear-gradient(180deg,rgba(16,28,48,.98),rgba(8,14,25,.96));border:1px solid var(--line);display:flex;flex-direction:column;gap:11px;transition:.18s ease;overflow:hidden}
@@ -2415,6 +2416,7 @@ html,body{
   color:#eef3ff!important;
 }
 .mini.wa,.mini.provider{background:rgba(34,197,94,.12)!important;border-color:rgba(34,197,94,.24)!important;color:#dcfce7!important}
+.mini.notified{background:rgba(138,161,255,.14)!important;border-color:rgba(138,161,255,.28)!important;color:#dbe3ff!important}
 .mini.link{background:rgba(139,125,255,.12)!important;border-color:rgba(139,125,255,.24)!important;color:#e7e3ff!important}
 .input,.select,textarea{
   height:44px;
@@ -3012,7 +3014,8 @@ function normalizeLoaded(data){
   }));
   data.clients=(data.clients||[]).map(c=>({
     id:c.id||uid(), name:c.name||'', whatsapp:c.whatsapp||'', accountId:c.accountId||'', platform:c.platform||'',
-    profile:c.profile||'', pin:c.pin||'', dueDate:c.dueDate||'', state:c.state||'Activo', notes:c.notes||''
+    profile:c.profile||'', pin:c.pin||'', dueDate:c.dueDate||'', state:c.state||'Activo', notes:c.notes||'',
+    lastRenewalWhatsAppNoticeDate:c.lastRenewalWhatsAppNoticeDate||''
   }));
   let paymentMethods=[];
   if(Array.isArray(data.settings?.paymentMethods)) paymentMethods=data.settings.paymentMethods;
@@ -3061,8 +3064,14 @@ function refreshUI(){
   initDatepickers();
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
-function todayPlus(days){ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
+function localDateString(d=new Date()){
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function todayStr(){ return localDateString(); }
+function todayPlus(days){ const d=new Date(); d.setDate(d.getDate()+days); return localDateString(d); }
 function fmtDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00:00'); return x.toLocaleDateString('es-PE',{day:'2-digit',month:'short'}); }
 function fmtDateLong(d){ if(!d) return ''; const x=new Date(d+'T00:00:00'); return x.toLocaleDateString('es-PE',{day:'numeric',month:'long',year:'numeric'}); }
 function daysUntil(d){ if(!d) return null; const now=new Date(); now.setHours(0,0,0,0); const x=new Date(d+'T00:00:00'); return Math.round((x-now)/86400000); }
@@ -3654,6 +3663,9 @@ function renderRenewals(){
     if(dd<0) msg=`Venció hace ${Math.abs(dd)} día${Math.abs(dd)===1?'':'s'}`;
     else if(dd===0) msg='Vence hoy';
     else if(dd===1) msg='Vence mañana';
+    const alreadyNotified=client.lastRenewalWhatsAppNoticeDate===todayStr();
+    const whatsappClass=alreadyNotified?'mini notified':'mini wa';
+    const whatsappText=alreadyNotified?'Avisado':'WhatsApp';
     return `<div class="item">
       <div>
         <strong>${escapeHtml(client.name)}</strong>
@@ -3662,7 +3674,7 @@ function renderRenewals(){
       <div class="right">
         ${chipForState(st)}
         <span class="chip platform">${msg}</span>
-        <button class="mini wa" onclick="sendWhatsapp('${client.id}')">WhatsApp</button>
+        <button class="${whatsappClass}" onclick="sendWhatsapp('${client.id}','renewal')">${whatsappText}</button>
         <button class="mini" onclick="renewClient('${client.id}')">Renovar</button>
         <button class="mini" onclick="setNoRenew('${client.id}')">No renovó</button>
       </div>
@@ -3986,11 +3998,16 @@ window.applyExactRenewClient=()=>{
 window.setNoRenew=(id)=>{ const c=state.clients.find(x=>x.id===id); if(!c) return; c.state='No renovó'; persistDoc('clients', c); refreshUI(); };
 window.prefillClientFromAccount=(id,forcedProfile='')=>{ clearClientForm(); renderAccountOptions(id); $('#cAccount').value=id; const acc=state.accounts.find(a=>a.id===id); $('#cPlatform').value=acc?.platform||''; $('#cProfile').value=forcedProfile||nextProfileSuggestion(id)||''; switchView('clientesView'); openModal('clientModalWrap'); initDatepickers(); };
 window.viewAccountClients=(id)=>{ switchView('clientesView'); const f=$('#clientAccountFilter'); if(f){ f.value=id; renderClients(); } window.scrollTo({top:0,behavior:'smooth'}); };
-window.sendWhatsapp=(id)=>{
+window.sendWhatsapp=(id,context='')=>{
   const client=state.clients.find(x=>x.id===id); if(!client) return;
   const phone=normalizePhone(client.whatsapp); if(!phone){ alert('Este cliente no tiene WhatsApp registrado.'); return; }
   const text=whatsappText(client);
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`,'_blank');
+  if(context==='renewal'){
+    client.lastRenewalWhatsAppNoticeDate=todayStr();
+    persistDoc('clients', client);
+    refreshUI();
+  }
 };
 window.removePayment=(idx)=>{ state.settings.paymentMethods.splice(idx,1); renderPaymentRows(); };
 
@@ -4214,7 +4231,8 @@ $('#saveClientBtn').onclick=()=>{
   const data={
     id:editingClientId||uid(), name, whatsapp:$('#cWhatsapp').value.trim(), accountId,
     platform:account?.platform||$('#cPlatform').value.trim(), profile:$('#cProfile').value.trim(), pin:$('#cPin').value.trim(),
-    dueDate:$('#cDueDisplay').value.trim(), state:$('#cState').value, notes:$('#cNotes').value.trim()
+    dueDate:$('#cDueDisplay').value.trim(), state:$('#cState').value, notes:$('#cNotes').value.trim(),
+    lastRenewalWhatsAppNoticeDate:state.clients.find(c=>c.id===editingClientId)?.lastRenewalWhatsAppNoticeDate||''
   };
   if(editingClientId) state.clients=state.clients.map(c=>c.id===editingClientId?data:c); else state.clients.unshift(data);
   closeModal('clientModalWrap'); clearClientForm(); persistDoc('clients', data); refreshUI();
@@ -4226,7 +4244,7 @@ $('#importFile').onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const
 function loadImported(data){
   const imported={accounts:[],clients:[],settings:{paymentMethods:[],whatsappPrefix:'51',freeSort:'platform'}};
   imported.accounts=(data.accounts||[]).map(a=>({ id:a.id||uid(), platform:a.platform||'', provider:a.provider||'', providerWhatsapp:a.providerWhatsapp||'', capacity:Number(a.capacity||0), email:a.email||'', password:a.password||'', dueDate:a.dueDate||'', notes:a.notes||'' }));
-  imported.clients=(data.clients||[]).map(c=>({ id:c.id||uid(), name:c.name||'', whatsapp:c.whatsapp||'', accountId:c.accountId||'', platform:c.platform||'', profile:c.profile||'', pin:c.pin||'', dueDate:c.dueDate||'', state:c.state||'Activo', notes:c.notes||'' }));
+  imported.clients=(data.clients||[]).map(c=>({ id:c.id||uid(), name:c.name||'', whatsapp:c.whatsapp||'', accountId:c.accountId||'', platform:c.platform||'', profile:c.profile||'', pin:c.pin||'', dueDate:c.dueDate||'', state:c.state||'Activo', notes:c.notes||'', lastRenewalWhatsAppNoticeDate:c.lastRenewalWhatsAppNoticeDate||'' }));
   const pm=data.settings?.paymentMethods;
   if(Array.isArray(pm)) imported.settings.paymentMethods=pm.map(p=>({method:p.method||'',number:p.number||'',holder:p.holder||''}));
   else if(typeof pm==='string' && pm.trim()) imported.settings.paymentMethods=[{method:'Pago',number:pm.trim(),holder:''}];

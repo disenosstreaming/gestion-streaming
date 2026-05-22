@@ -2746,7 +2746,7 @@ body.modal-open{overflow:hidden}
         <h3>Renovaciones</h3>
         <div class="tools">
           <select class="select" id="renewalAccountFilter">
-            <option value="">Todas las cuentas</option>
+            <option value="">Todas las plataformas</option>
           </select>
         </div>
       </div>
@@ -3269,7 +3269,7 @@ function renderClientFilterOptions(selectedId=''){
 function renderRenewalFilterOptions(selectedId=''){
   const filter=$('#renewalAccountFilter');
   if(!filter) return;
-  filter.innerHTML=`<option value="">Todas las cuentas</option>${sortedAccountsForPick().map(a=>`<option value="${a.id}">${escapeHtml(accountLabel(a))}</option>`).join('')}`;
+  filter.innerHTML=`<option value="">Todas las plataformas</option>${orderedRenewalPlatforms().map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(friendlyPlatform(p))}</option>`).join('')}`;
   filter.value=selectedId||'';
 }
 
@@ -3317,6 +3317,19 @@ function renderClients(){
 function orderedPlatforms(accounts=state.accounts){
   const seen=[...new Set((accounts||[]).map(a=>a.platform||'Otros').filter(Boolean))];
   return seen.sort((a,b)=>{
+    const ia=PLATFORM_OPTIONS.indexOf(a);
+    const ib=PLATFORM_OPTIONS.indexOf(b);
+    const oa=ia===-1?999:ia;
+    const ob=ib===-1?999:ib;
+    return (oa-ob) || a.localeCompare(b);
+  });
+}
+function orderedRenewalPlatforms(){
+  const platforms=state.clients.map(c=>{
+    const account=state.accounts.find(a=>a.id===c.accountId);
+    return c.platform || account?.platform || '';
+  }).filter(Boolean);
+  return [...new Set(platforms)].sort((a,b)=>{
     const ia=PLATFORM_OPTIONS.indexOf(a);
     const ib=PLATFORM_OPTIONS.indexOf(b);
     const oa=ia===-1?999:ia;
@@ -3629,11 +3642,13 @@ function renderFree(){
 function renderRenewals(){
   const currentFilter=$('#renewalAccountFilter')?.value||'';
   renderRenewalFilterOptions(currentFilter);
-  const rows=state.clients.map(c=>({client:c,dd:daysUntil(c.dueDate),st:effectiveClientState(c)}))
-    .filter(x=>x.st!=='No renovó' && x.dd!==null && x.dd<=3 && (!currentFilter || x.client.accountId===currentFilter))
-    .sort((a,b)=>a.dd-b.dd);
-  $('#renewalsList').innerHTML=rows.length?rows.map(({client,dd,st})=>{
-    const account=state.accounts.find(a=>a.id===client.accountId);
+  const rows=state.clients.map(c=>{
+    const account=state.accounts.find(a=>a.id===c.accountId);
+    return {client:c,account,platform:c.platform || account?.platform || '',dd:daysUntil(c.dueDate),st:effectiveClientState(c)};
+  })
+    .filter(x=>x.st!=='No renovó' && x.dd!==null && x.dd<=3 && (!currentFilter || x.platform===currentFilter))
+    .sort((a,b)=>(a.dd-b.dd) || friendlyPlatform(a.platform).localeCompare(friendlyPlatform(b.platform)) || (a.client.name||'').localeCompare(b.client.name||''));
+  $('#renewalsList').innerHTML=rows.length?rows.map(({client,account,platform,dd,st})=>{
     let msg='Próximo';
     if(dd<0) msg=`Venció hace ${Math.abs(dd)} día${Math.abs(dd)===1?'':'s'}`;
     else if(dd===0) msg='Vence hoy';
@@ -3642,7 +3657,7 @@ function renderRenewals(){
     return `<div class="item">
       <div>
         <strong>${escapeHtml(client.name)}</strong>
-        <div class="sub">${escapeHtml(friendlyPlatform(client.platform || account?.platform))} · Perfil ${escapeHtml(client.profile||'—')} · ${escapeHtml(account ? accountLabel(account) : '—')}</div>
+        <div class="sub">${escapeHtml(friendlyPlatform(platform))} · Perfil ${escapeHtml(client.profile||'—')}</div>
       </div>
       <div class="right">
         ${chipForState(st)}
@@ -3652,7 +3667,7 @@ function renderRenewals(){
         <button class="mini" onclick="setNoRenew('${client.id}')">No renovó</button>
       </div>
     </div>`;
-  }).join(''):`<div class="empty">Sin renovaciones cercanas para esta cuenta</div>`;
+  }).join(''):`<div class="empty">Sin renovaciones cercanas para esta plataforma</div>`;
 }
 
 function paymentTextBlock(){

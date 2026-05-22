@@ -2742,7 +2742,14 @@ body.modal-open{overflow:hidden}
     </section>
 
     <section id="renovacionesView" class="view panel">
-      <div class="panel-head"><h3>Renovaciones</h3></div>
+      <div class="panel-head">
+        <h3>Renovaciones</h3>
+        <div class="tools">
+          <select class="select" id="renewalAccountFilter">
+            <option value="">Todas las cuentas</option>
+          </select>
+        </div>
+      </div>
       <div id="renewalsList" class="list"></div>
     </section>
   </main>
@@ -3259,6 +3266,12 @@ function renderClientFilterOptions(selectedId=''){
   $('#clientAccountFilter').innerHTML=`<option value="">Todas las cuentas</option>${sortedAccountsForPick().map(a=>`<option value="${a.id}">${escapeHtml(accountLabel(a))}</option>`).join('')}`;
   $('#clientAccountFilter').value=selectedId||'';
 }
+function renderRenewalFilterOptions(selectedId=''){
+  const filter=$('#renewalAccountFilter');
+  if(!filter) return;
+  filter.innerHTML=`<option value="">Todas las cuentas</option>${sortedAccountsForPick().map(a=>`<option value="${a.id}">${escapeHtml(accountLabel(a))}</option>`).join('')}`;
+  filter.value=selectedId||'';
+}
 
 function renderClients(){
   const currentFilter=$('#clientAccountFilter').value||'';
@@ -3614,8 +3627,10 @@ function renderFree(){
   }).join(''):`<div class="empty">Sin Perfiles Libres</div>`;
 }
 function renderRenewals(){
+  const currentFilter=$('#renewalAccountFilter')?.value||'';
+  renderRenewalFilterOptions(currentFilter);
   const rows=state.clients.map(c=>({client:c,dd:daysUntil(c.dueDate),st:effectiveClientState(c)}))
-    .filter(x=>x.dd!==null && x.dd<=3)
+    .filter(x=>x.st!=='No renovó' && x.dd!==null && x.dd<=3 && (!currentFilter || x.client.accountId===currentFilter))
     .sort((a,b)=>a.dd-b.dd);
   $('#renewalsList').innerHTML=rows.length?rows.map(({client,dd,st})=>{
     const account=state.accounts.find(a=>a.id===client.accountId);
@@ -3634,9 +3649,10 @@ function renderRenewals(){
         <span class="chip platform">${msg}</span>
         <button class="mini wa" onclick="sendWhatsapp('${client.id}')">WhatsApp</button>
         <button class="mini" onclick="renewClient('${client.id}')">Renovar</button>
+        <button class="mini" onclick="setNoRenew('${client.id}')">No renovó</button>
       </div>
     </div>`;
-  }).join(''):`<div class="empty">Sin renovaciones cercanas</div>`;
+  }).join(''):`<div class="empty">Sin renovaciones cercanas para esta cuenta</div>`;
 }
 
 function paymentTextBlock(){
@@ -4137,6 +4153,7 @@ $$('.nav-btn').forEach(btn=>btn.onclick=()=>switchView(btn.dataset.view));
 $('#clientSearch').oninput=renderClients;
 $('#clientStatusFilter').onchange=renderClients;
 $('#clientAccountFilter').onchange=renderClients;
+$('#renewalAccountFilter').onchange=renderRenewals;
 $('#accountSearch').oninput=renderAccounts;
 
 $('#freeSort').onchange=()=>{ state.settings.freeSort=$('#freeSort').value; renderFree(); persistSettings(); };

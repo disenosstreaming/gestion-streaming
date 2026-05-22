@@ -3066,6 +3066,7 @@ function todayPlus(days){ const d=new Date(); d.setDate(d.getDate()+days); retur
 function fmtDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00:00'); return x.toLocaleDateString('es-PE',{day:'2-digit',month:'short'}); }
 function fmtDateLong(d){ if(!d) return ''; const x=new Date(d+'T00:00:00'); return x.toLocaleDateString('es-PE',{day:'numeric',month:'long',year:'numeric'}); }
 function daysUntil(d){ if(!d) return null; const now=new Date(); now.setHours(0,0,0,0); const x=new Date(d+'T00:00:00'); return Math.round((x-now)/86400000); }
+function renewalAlertDays(dd){ return dd!==null && dd<=1; }
 function normalizePhone(v){
   const raw=String(v||'').trim();
   if(!raw) return '';
@@ -3145,7 +3146,7 @@ function renderStats(){
   const accounts=state.accounts.length;
   const clients=state.clients.filter(c=>effectiveClientState(c)!=='No renovó').length;
   const free=state.accounts.reduce((n,a)=>n+accountAvailability(a).free,0);
-  const dueSoon=state.clients.filter(c=>{ const dd=daysUntil(c.dueDate); return dd!==null && dd<=3; }).length;
+  const dueSoon=state.clients.filter(c=>effectiveClientState(c)!=='No renovó' && renewalAlertDays(daysUntil(c.dueDate))).length;
   const setText=(sel,val)=>{ const el=$(sel); if(el) el.textContent=val; };
   setText('#statActivos',clients);
   setText('#statCuentas',accounts);
@@ -3646,14 +3647,13 @@ function renderRenewals(){
     const account=state.accounts.find(a=>a.id===c.accountId);
     return {client:c,account,platform:c.platform || account?.platform || '',dd:daysUntil(c.dueDate),st:effectiveClientState(c)};
   })
-    .filter(x=>x.st!=='No renovó' && x.dd!==null && x.dd<=3 && (!currentFilter || x.platform===currentFilter))
+    .filter(x=>x.st!=='No renovó' && renewalAlertDays(x.dd) && (!currentFilter || x.platform===currentFilter))
     .sort((a,b)=>(a.dd-b.dd) || friendlyPlatform(a.platform).localeCompare(friendlyPlatform(b.platform)) || (a.client.name||'').localeCompare(b.client.name||''));
   $('#renewalsList').innerHTML=rows.length?rows.map(({client,account,platform,dd,st})=>{
     let msg='Próximo';
     if(dd<0) msg=`Venció hace ${Math.abs(dd)} día${Math.abs(dd)===1?'':'s'}`;
     else if(dd===0) msg='Vence hoy';
     else if(dd===1) msg='Vence mañana';
-    else msg=`Vence en ${dd} días`;
     return `<div class="item">
       <div>
         <strong>${escapeHtml(client.name)}</strong>

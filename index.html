@@ -2790,7 +2790,7 @@ body.modal-open{overflow:hidden}
     </div>
     <div class="form">
       <label>Plataforma
-        <select class="select" id="aPlatformSelect"><option value="Netflix">Netflix</option><option value="Disney+">Disney+</option><option value="Max">Max</option><option value="Prime Video">Prime Video</option><option value="Crunchyroll">Crunchyroll</option><option value="Spotify">Spotify</option><option value="Paramount+">Paramount+</option><option value="YouTube Premium">YouTube Premium</option><option value="Viki">Viki</option><option value="Otro">Otro</option></select>
+        <select class="select" id="aPlatformSelect"><option value="Netflix">Netflix</option><option value="Disney+">Disney+</option><option value="Max">Max</option><option value="Prime Video">Prime Video</option><option value="Crunchyroll">Crunchyroll</option><option value="Spotify">Spotify</option><option value="Paramount+">Paramount+</option><option value="YouTube Premium">YouTube Premium</option><option value="Viki">Viki</option><option value="ViX">ViX</option><option value="Otro">Otro</option></select>
         <input class="input hidden" id="aPlatformCustom" placeholder="Otra plataforma" style="margin-top:8px" />
       </label>
       <label>Proveedor<input class="input" id="aProvider" placeholder="Bertha / cuenta propia" /></label>
@@ -2976,7 +2976,7 @@ body.modal-open{overflow:hidden}
 const KEY='gestion_streaming_v5';
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
-const PLATFORM_OPTIONS=['Netflix','Disney+','Max','Prime Video','Crunchyroll','Spotify','Paramount+','YouTube Premium','Viki','Otro'];
+const PLATFORM_OPTIONS=['Netflix','Disney+','Max','Prime Video','Crunchyroll','Spotify','Paramount+','YouTube Premium','Viki','ViX','Otro'];
 const PLATFORM_URLS={
   'Netflix':'https://www.netflix.com/login',
   'Disney+':'https://www.disneyplus.com/login',
@@ -2986,7 +2986,8 @@ const PLATFORM_URLS={
   'Spotify':'https://accounts.spotify.com/',
   'Paramount+':'https://www.paramountplus.com/',
   'YouTube Premium':'https://accounts.google.com/',
-  'Viki':'https://www.viki.com/signin'
+  'Viki':'https://www.viki.com/signin',
+  'ViX':'https://vix.com/es-es'
 };
 let state=load();
 let selectedFreePlatform=null;
@@ -3130,6 +3131,7 @@ function platformIcon(name){
   if(p.includes('crunchy')) return '🍥';
   if(p.includes('spotify')) return '🎵';
   if(p.includes('youtube')) return '▶️';
+  if(p.includes('vix')) return '📺';
   return '📺';
 }
 function platformColor(name){
@@ -3143,6 +3145,7 @@ function platformColor(name){
   if(p.includes('youtube')) return '#ff0033';
   if(p.includes('paramount')) return '#2563eb';
   if(p.includes('viki')) return '#06b6d4';
+  if(p.includes('vix')) return '#f97316';
   return '#8aa1ff';
 }
 function setToday(){ const d=new Date(); $('#todayLabel').textContent=d.toLocaleDateString('es-PE',{weekday:'long',day:'numeric',month:'long'}); }
@@ -4202,7 +4205,11 @@ $('#accountSearch').oninput=renderAccounts;
 
 $('#freeSort').onchange=()=>{ state.settings.freeSort=$('#freeSort').value; renderFree(); persistSettings(); };
 $('#cAccount').onchange=()=>{ const acc=state.accounts.find(a=>a.id===$('#cAccount').value); $('#cPlatform').value=acc?.platform||''; if(!editingClientId) $('#cProfile').value=nextProfileSuggestion(acc?.id)||''; };
-$('#aPlatformSelect').onchange=()=>{ $('#aPlatformCustom').classList.toggle('hidden',$('#aPlatformSelect').value!=='Otro'); };
+$('#aPlatformSelect').onchange=()=>{ 
+  const platform=$('#aPlatformSelect').value;
+  $('#aPlatformCustom').classList.toggle('hidden',platform!=='Otro');
+  if(platform==='ViX' && !$('#aCapacity').value) $('#aCapacity').value='5';
+};
 $('#addPaymentBtn').onclick=()=>{ state.settings.paymentMethods.push({method:'',number:'',holder:''}); renderPaymentRows(); };
 document.addEventListener('input',e=>{ const payField=e.target.dataset.pay; if(payField){ const idx=Number(e.target.dataset.index); state.settings.paymentMethods[idx][payField]=e.target.value; } });
 
@@ -4274,7 +4281,9 @@ function openBulkModal(){
   // Poblar select de plataformas
   $('#bulkPlatform').innerHTML = PLATFORM_OPTIONS.map(p=>`<option value="${p}">${p}</option>`).join('');
   $('#bulkPlatform').onchange = () => {
-    $('#bulkPlatformCustom').classList.toggle('hidden', $('#bulkPlatform').value !== 'Otro');
+    const platform=$('#bulkPlatform').value;
+    $('#bulkPlatformCustom').classList.toggle('hidden', platform !== 'Otro');
+    if(platform==='ViX' && !$('#bulkCapacity').value) $('#bulkCapacity').value='5';
   };
   // Resetear
   $('#bulkEmails').value = '';

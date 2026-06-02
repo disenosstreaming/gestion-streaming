@@ -4366,37 +4366,18 @@ function bulkRemoveRow(i){
   renderBulkPreview();
 }
 
-async function bulkSaveAll(){
+function bulkSaveAll(){
   if(!bulkPreviewData.length){ alert('No hay cuentas para guardar.'); return; }
-
-  const user = auth.currentUser;
-  if(!user){ alert('No hay sesión activa.'); return; }
-
-  const newAccounts = bulkPreviewData.map(acc => ({
-    id: acc.id, platform: acc.platform, provider: acc.provider,
-    providerWhatsapp: acc.providerWhatsapp, capacity: acc.capacity,
-    email: acc.email, password: acc.password, dueDate: acc.dueDate, notes: acc.notes
-  }));
-
-  // Guardar en Firestore en batches de 450 (límite Firestore = 500)
-  try {
-    const colRef = accountsCol(user.uid);
-    const chunks = [];
-    for(let i = 0; i < newAccounts.length; i += 450) chunks.push(newAccounts.slice(i, i + 450));
-    for(const chunk of chunks){
-      const batch = writeBatch(db);
-      chunk.forEach(acc => batch.set(doc(colRef, acc.id), acc));
-      await batch.commit();
-    }
-  } catch(err){
-    console.error('❌ Error en carga masiva:', err);
-    alert('⚠️ Error al guardar: ' + (err.message || 'Verifica tu conexión.'));
-    return;
-  }
-
-  newAccounts.forEach(acc => state.accounts.unshift(acc));
+  bulkPreviewData.forEach(acc => {
+    state.accounts.unshift({
+      id: acc.id, platform: acc.platform, provider: acc.provider,
+      providerWhatsapp: acc.providerWhatsapp, capacity: acc.capacity,
+      email: acc.email, password: acc.password, dueDate: acc.dueDate, notes: acc.notes
+    });
+  });
   const total = bulkPreviewData.length;
   bulkPreviewData = [];
+  persist();
   closeModal('bulkAccountModalWrap');
   refresh();
   // Toast de confirmación

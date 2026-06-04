@@ -3116,24 +3116,18 @@ function freeProfiles(account){
 function nextProfileSuggestion(accountId){ const acc=state.accounts.find(a=>a.id===accountId); return acc?freeProfiles(acc)[0]||'':''; }
 async function copyBotFlowFreeProfiles(platform){
   const target=String(platform||'').trim();
-  const rows=state.accounts
-    .filter(a=>accountAvailability(a).free>0)
-    .filter(a=>!target || target==='all' || String(a.platform||'')===target)
-    .map(a=>{
-      const profiles=freeProfiles(a);
-      if(!a.email || !a.password || !profiles.length) return '';
-      return `${a.email} | ${a.password} | ${profiles.join(',')}`;
-    })
-    .filter(Boolean);
+  const exportMap=window.__botflowFreeExports || {};
+  const rows=target==='all'
+    ? Object.values(exportMap).flatMap(item=>item.rows||[])
+    : (exportMap[target]?.rows || []);
   if(!rows.length){
     alert('No hay perfiles libres con correo y clave para copiar.');
     return;
   }
   const text=rows.join('\n');
-  const totalProfiles=rows.reduce((n,row)=>{
-    const profiles=String(row).split('|')[2] || '';
-    return n + profiles.split(',').map(x=>x.trim()).filter(Boolean).length;
-  },0);
+  const totalProfiles=target==='all'
+    ? Object.values(exportMap).reduce((n,item)=>n+Number(item.total||0),0)
+    : Number(exportMap[target]?.total || 0);
   try{
     await navigator.clipboard.writeText(text);
     alert(`Copiado para BotFlow: ${rows.length} cuenta${rows.length===1?'':'s'} / ${totalProfiles} perfiles libres`);
@@ -3625,6 +3619,19 @@ function renderFree(){
     return (oa-ob) || a[0].localeCompare(b[0]);
   });
 
+  window.__botflowFreeExports={};
+  Object.entries(groups).forEach(([platform,list])=>{
+    const rows=[];
+    let total=0;
+    list.forEach(a=>{
+      const profiles=(a._freeList && a._freeList.length ? a._freeList : freeProfiles(a)).slice(0, Math.max(0, Number(a._av?.free || 0)));
+      if(!a.email || !a.password || !profiles.length) return;
+      rows.push(`${a.email} | ${a.password} | ${profiles.join(',')}`);
+      total+=profiles.length;
+    });
+    window.__botflowFreeExports[platform]={rows,total};
+  });
+
   $('#freeGroups').innerHTML=sortedGroups.length?sortedGroups.map(([platform,list,total])=>{
     const color=platformColor(platform);
     return `<div class="platform-panel" style="--pcolor:${color}">
@@ -3647,7 +3654,7 @@ function renderFree(){
           const isRecommended=idx===0;
           const noClients=a._av.used===0;
           const almostFull=a._av.free===1;
-          const profiles=a._freeList.length?a._freeList:[];
+          const profiles=(a._freeList.length?a._freeList:[]).slice(0, Math.max(0, Number(a._av.free || 0)));
           return `<div class="free-account ${isRecommended?'recommended':''}">
             <div class="free-account-top">
               <div class="free-account-main">

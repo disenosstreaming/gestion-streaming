@@ -3114,6 +3114,33 @@ function freeProfiles(account){
   return list;
 }
 function nextProfileSuggestion(accountId){ const acc=state.accounts.find(a=>a.id===accountId); return acc?freeProfiles(acc)[0]||'':''; }
+async function copyBotFlowFreeProfiles(platform){
+  const target=String(platform||'').trim();
+  const rows=state.accounts
+    .filter(a=>accountAvailability(a).free>0)
+    .filter(a=>!target || target==='all' || String(a.platform||'')===target)
+    .map(a=>{
+      const profiles=freeProfiles(a);
+      if(!a.email || !a.password || !profiles.length) return '';
+      return `${a.email} | ${a.password} | ${profiles.join(',')}`;
+    })
+    .filter(Boolean);
+  if(!rows.length){
+    alert('No hay perfiles libres con correo y clave para copiar.');
+    return;
+  }
+  const text=rows.join('\n');
+  const totalProfiles=rows.reduce((n,row)=>{
+    const profiles=String(row).split('|')[2] || '';
+    return n + profiles.split(',').map(x=>x.trim()).filter(Boolean).length;
+  },0);
+  try{
+    await navigator.clipboard.writeText(text);
+    alert(`Copiado para BotFlow: ${rows.length} cuenta${rows.length===1?'':'s'} / ${totalProfiles} perfiles libres`);
+  }catch(e){
+    prompt('Copia este texto y pegalo en BotFlow > Importar libres rapido:', text);
+  }
+}
 function chipForState(s){ const cls=s==='Activo'?'ok':s==='Por vencer'?'warn':s==='Vencido'?'danger':'free'; return `<span class="chip ${cls}">${s}</span>`; }
 function accountStateChip(a){
   const dd=daysUntil(a.dueDate);
@@ -3609,7 +3636,10 @@ function renderFree(){
             <div class="sub">${list.length} Cuenta${list.length===1?'':'s'} Disponible${list.length===1?'':'s'}</div>
           </div>
         </div>
-        <div class="platform-total">${total} Perfil${total===1?'':'es'} Libre${total===1?'':'s'}</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="mini" type="button" onclick="copyBotFlowFreeProfiles('${escapeJs(platform)}')">Copiar BotFlow</button>
+          <div class="platform-total">${total} Perfil${total===1?'':'es'} Libre${total===1?'':'s'}</div>
+        </div>
       </div>
       <div class="free-account-grid">
         ${list.map((a,idx)=>{

@@ -5071,6 +5071,27 @@ function freeProfiles(account){
   return list;
 }
 function nextProfileSuggestion(accountId){ const acc=state.accounts.find(a=>a.id===accountId); return acc?freeProfiles(acc)[0]||'':''; }
+async function copyBotFlowFreeProfiles(platform){
+  const target=String(platform||'').trim();
+  const exportMap=window.__botflowFreeExports || {};
+  const rows=target==='all'
+    ? Object.values(exportMap).flatMap(item=>item.rows||[])
+    : (exportMap[target]?.rows || []);
+  if(!rows.length){
+    alert('No hay perfiles libres con correo y clave para copiar.');
+    return;
+  }
+  const text=rows.join('\n');
+  const totalProfiles=target==='all'
+    ? Object.values(exportMap).reduce((n,item)=>n+Number(item.total||0),0)
+    : Number(exportMap[target]?.total || 0);
+  try{
+    await navigator.clipboard.writeText(text);
+    alert(`Copiado para BotFlow: ${rows.length} cuenta${rows.length===1?'':'s'} / ${totalProfiles} perfiles libres`);
+  }catch(e){
+    prompt('Copia este texto y pegalo en BotFlow > Importar libres rapido:', text);
+  }
+}
 function shouldUseDefaultPrice(value){
   return !String(value ?? '').trim() || moneyNumber(value)===0;
 }
@@ -5713,6 +5734,19 @@ function renderFree(){
     return (oa-ob) || a[0].localeCompare(b[0]);
   });
 
+  window.__botflowFreeExports={};
+  Object.entries(groups).forEach(([platform,list])=>{
+    const rows=[];
+    let total=0;
+    list.forEach(a=>{
+      const profiles=(a._freeList && a._freeList.length ? a._freeList : freeProfiles(a)).slice(0, Math.max(0, Number(a._av?.free || 0)));
+      if(!a.email || !a.password || !profiles.length) return;
+      rows.push(`${a.email} | ${a.password} | ${profiles.join(',')}`);
+      total+=profiles.length;
+    });
+    window.__botflowFreeExports[platform]={rows,total};
+  });
+
   $('#freeGroups').innerHTML=sortedGroups.length?sortedGroups.map(([platform,list,total])=>{
     const color=platformColor(platform);
     return `<div class="platform-panel" style="--pcolor:${color}">
@@ -5724,7 +5758,10 @@ function renderFree(){
             <div class="sub">${list.length} Cuenta${list.length===1?'':'s'} Disponible${list.length===1?'':'s'}</div>
           </div>
         </div>
-        <div class="platform-total">${total} Perfil${total===1?'':'es'} Libre${total===1?'':'s'}</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="mini" type="button" onclick="copyBotFlowFreeProfiles('${escapeJs(platform)}')">Copiar BotFlow</button>
+          <div class="platform-total">${total} Perfil${total===1?'':'es'} Libre${total===1?'':'s'}</div>
+        </div>
       </div>
       <div class="free-account-grid">
         ${list.map((a,idx)=>{
@@ -5732,7 +5769,7 @@ function renderFree(){
           const isRecommended=idx===0;
           const noClients=a._av.used===0;
           const almostFull=a._av.free===1;
-          const profiles=a._freeList.length?a._freeList:[];
+          const profiles=(a._freeList.length?a._freeList:[]).slice(0, Math.max(0, Number(a._av.free || 0)));
           return `<div class="free-account ${isRecommended?'recommended':''}">
             <div class="free-account-top">
               <div class="free-account-main">

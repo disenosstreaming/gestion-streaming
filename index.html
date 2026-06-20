@@ -2082,6 +2082,8 @@ tbody tr:hover td{background:rgba(255,255,255,.02)}
 .account-section-head h4{margin:0;font-size:16px;font-weight:800;letter-spacing:-.03em}
 .account-section-head .sub{color:var(--muted);font-size:12px}
 .account-grid-compact{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.checker-copy-btn .count{margin-left:2px;background:rgba(255,255,255,.10);color:#fff}
+.checker-copy-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
 
 /* Secret password */
 .secret-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -3692,6 +3694,9 @@ i[data-lucide="search"]::before{content:"âŒ•"}
         <h3>Cuentas Madre</h3>
         <div class="tools">
           <input class="input search" id="accountSearch" placeholder="Buscar plataforma, correo o proveedor" />
+          <button class="btn small checker-copy-btn" id="copyExpiredCheckerBtn" type="button" onclick="copyExpiredAccountsForChecker()" title="Copia las cuentas Crunchyroll vencidas en formato correo | clave">
+            <i data-lucide="clipboard-copy"></i><span>Copiar Crunchy vencidas</span><span class="count" id="expiredCheckerCount">0</span>
+          </button>
         </div>
       </div>
       <div class="platform-filters" id="platformFilters"></div>
@@ -5556,9 +5561,47 @@ function accountSectionLabel(key){
 window.copyAccountEmail=async(id)=>{ const acc=state.accounts.find(a=>a.id===id); if(!acc?.email) return; try{ await navigator.clipboard.writeText(acc.email);}catch(e){} };
 window.copyAccountProvider=async(id)=>{ const acc=state.accounts.find(a=>a.id===id); if(!acc?.provider) return; try{ await navigator.clipboard.writeText(acc.provider);}catch(e){} };
 
+function expiredCrunchyAccountsForChecker(){
+  const seen=new Set();
+  return state.accounts.filter(account=>{
+    const platform=String(account.platform||'').toLowerCase();
+    const email=String(account.email||'').trim().toLowerCase();
+    const password=String(account.password||'').trim();
+    const dd=daysUntil(account.dueDate);
+    if(!platform.includes('crunchy') || dd===null || dd>=0 || !email || !password || seen.has(email)) return false;
+    seen.add(email);
+    return true;
+  });
+}
+
+function updateExpiredCheckerButton(){
+  const accounts=expiredCrunchyAccountsForChecker();
+  const count=document.getElementById('expiredCheckerCount');
+  const button=document.getElementById('copyExpiredCheckerBtn');
+  if(count) count.textContent=String(accounts.length);
+  if(button) button.disabled=!accounts.length;
+}
+
+window.copyExpiredAccountsForChecker=async()=>{
+  const accounts=expiredCrunchyAccountsForChecker();
+  if(!accounts.length){
+    notifySaveStatus('error','No hay cuentas Crunchy vencidas con correo y contraseña.');
+    return;
+  }
+  const rows=accounts.map(account=>`${String(account.email||'').trim()} | ${String(account.password||'').trim()}`);
+  try{
+    await copyTextToClipboard(rows.join('\n'));
+    notifySaveStatus('success',`${accounts.length} cuenta${accounts.length===1?'':'s'} Crunchy vencida${accounts.length===1?'':'s'} copiada${accounts.length===1?'':'s'} para el checker.`);
+  }catch(error){
+    notifySaveStatus('error','No se pudieron copiar las cuentas.');
+    console.warn('clipboard checker:',error);
+  }
+};
+
 function renderAccounts(){
   const q=$('#accountSearch').value.trim().toLowerCase();
   renderPlatformFilters();
+  updateExpiredCheckerButton();
   const activeAccountPlatform=normalizeAccountPlatformFilter();
 
   const cards=state.accounts.filter(a=>{

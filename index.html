@@ -3756,6 +3756,7 @@ i[data-lucide="search"]::before{content:"âŒ•"}
           <label class="renewals-copy-chip"><input type="checkbox" data-renewal-copy="today"><span class="chip-check"><i data-lucide="check"></i></span><span>Hoy <b id="copyTodayCount">0</b></span></label>
           <label class="renewals-copy-chip"><input type="checkbox" data-renewal-copy="tomorrow"><span class="chip-check"><i data-lucide="check"></i></span><span>Mañana <b id="copyTomorrowCount">0</b></span></label>
           <button class="btn primary small" type="button" id="copyRenewalPhonesBtn" onclick="copyRenewalPhones()"><i data-lucide="copy"></i><span>Copiar números</span></button>
+          <button class="btn small" type="button" id="copyCodexRenewalsBtn" onclick="copyExpiredRenewalsForCodex()" title="Copia los recordatorios vencidos sin datos de acceso"><i data-lucide="clipboard-list"></i><span>Preparar para Codex</span></button>
         </div>
       </div>
       <div class="renewals-table">
@@ -5012,6 +5013,74 @@ window.copyRenewalPhones=async function(){
     notifySaveStatus('success',`${phones.length} numeros copiados.`);
   }catch(_){
     notifySaveStatus('error','No se pudo copiar.');
+  }
+};
+
+function renewalReminderPrice(client, platform){
+  const normalized=String(platform||'').toLowerCase();
+  if(normalized.includes('crunchy')) return 5;
+  const configured=typeof platformPriceFor==='function' ? platformPriceFor(platform) : {};
+  return moneyNumber(client?.renewalPrice || client?.salePrice || configured?.renewalPrice || configured?.salePrice || 0);
+}
+
+function expiredRenewalReminderText(client, platform){
+  const service=friendlyPlatform(platform) || platform || 'streaming';
+  const price=renewalReminderPrice(client, service);
+  const priceLine=price
+    ? `Si deseas renovarlo por un mes, el precio es S/ ${formatMoney(price)}.`
+    : 'Si deseas renovarlo, escríbeme y te ayudo con gusto.';
+  return [
+    `Hola${client?.name ? `, ${client.name}` : ''} 👋✨`,
+    '',
+    `Te escribo para recordarte que tu servicio de ${service} ya se venció.`,
+    '',
+    priceLine,
+    '',
+    'Puedes realizar el pago por Yape:',
+    '💜 939401721',
+    'A nombre de Bertha D. Nonajulca M.',
+    '',
+    'Cuando realices el pago, envíame la captura y te ayudo con la renovación ✅'
+  ].join('\n');
+}
+
+window.copyExpiredRenewalsForCodex=async function(){
+  const rows=currentRenewalRows().filter(x=>x.dd!==null && x.dd<0 && normalizePhone(x.client.whatsapp));
+  const reminders=rows.map(({client,platform})=>({
+    clientId:String(client.id||''),
+    name:String(client.name||''),
+    phone:normalizePhone(client.whatsapp),
+    service:friendlyPlatform(platform) || platform || 'Streaming',
+    dueDate:String(client.dueDate||''),
+    alreadyNotifiedToday:client.lastRenewalWhatsAppNoticeDate===todayStr(),
+    message:expiredRenewalReminderText(client,platform)
+  }));
+  if(!reminders.length){
+    notifySaveStatus('error','No hay clientes vencidos con WhatsApp en esta vista.');
+    return;
+  }
+  const payload=JSON.stringify({
+    type:'codex-renewal-reminders',
+    generatedAt:new Date().toISOString(),
+    count:reminders.length,
+    reminders
+  },null,2);
+  try{
+    await copyTextToClipboard(payload);
+    const btn=$('#copyCodexRenewalsBtn');
+    if(btn){
+      btn.innerHTML=`<i data-lucide="check"></i><span>${reminders.length} preparados</span>`;
+      if(window.lucide && typeof window.lucide.createIcons==='function') window.lucide.createIcons();
+      clearTimeout(window.__codexRenewalButtonTimer);
+      window.__codexRenewalButtonTimer=setTimeout(()=>{
+        btn.innerHTML='<i data-lucide="clipboard-list"></i><span>Preparar para Codex</span>';
+        if(window.lucide && typeof window.lucide.createIcons==='function') window.lucide.createIcons();
+      },3000);
+    }
+    notifySaveStatus('success',`${reminders.length} recordatorio${reminders.length===1?'':'s'} copiado${reminders.length===1?'':'s'} para Codex.`);
+  }catch(error){
+    notifySaveStatus('error','No se pudo copiar la cola para Codex.');
+    console.warn('clipboard renovaciones Codex:',error);
   }
 };
 function secretMask(v){ return v ? '*'.repeat(Math.max(6,String(v).length)) : '-'; }

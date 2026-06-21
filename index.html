@@ -5027,10 +5027,10 @@ function expiredRenewalReminderText(client, platform){
   const service=friendlyPlatform(platform) || platform || 'streaming';
   const price=renewalReminderPrice(client, service);
   const priceLine=price
-    ? `Si deseas renovarlo por un mes, el precio es S/ ${formatMoney(price)}.`
+    ? `Si deseas renovarlo por un mes, el precio es ${formatMoney(price)}.`
     : 'Si deseas renovarlo, escríbeme y te ayudo con gusto.';
   return [
-    `Hola${client?.name ? `, ${client.name}` : ''} 👋✨`,
+    '¡Hola! 👋✨',
     '',
     `Te escribo para recordarte que tu servicio de ${service} ya se venció.`,
     '',
@@ -5048,7 +5048,6 @@ window.copyExpiredRenewalsForCodex=async function(){
   const rows=currentRenewalRows().filter(x=>x.dd!==null && x.dd<0 && normalizePhone(x.client.whatsapp));
   const reminders=rows.map(({client,platform})=>({
     clientId:String(client.id||''),
-    name:String(client.name||''),
     phone:normalizePhone(client.whatsapp),
     service:friendlyPlatform(platform) || platform || 'Streaming',
     dueDate:String(client.dueDate||''),

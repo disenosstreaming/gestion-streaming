@@ -3756,7 +3756,7 @@ i[data-lucide="search"]::before{content:"âŒ•"}
           <label class="renewals-copy-chip"><input type="checkbox" data-renewal-copy="today"><span class="chip-check"><i data-lucide="check"></i></span><span>Hoy <b id="copyTodayCount">0</b></span></label>
           <label class="renewals-copy-chip"><input type="checkbox" data-renewal-copy="tomorrow"><span class="chip-check"><i data-lucide="check"></i></span><span>Mañana <b id="copyTomorrowCount">0</b></span></label>
           <button class="btn primary small" type="button" id="copyRenewalPhonesBtn" onclick="copyRenewalPhones()"><i data-lucide="copy"></i><span>Copiar números</span></button>
-          <button class="btn small" type="button" id="copyCodexRenewalsBtn" onclick="copyExpiredRenewalsForCodex()" title="Copia los recordatorios vencidos sin datos de acceso"><i data-lucide="clipboard-list"></i><span>Preparar para Codex</span></button>
+          <button class="btn small" type="button" id="copyCodexRenewalsBtn" onclick="copyExpiredRenewalsForCodex()" title="Copia recordatorios de hoy y mañana para enviar por WhatsApp"><i data-lucide="clipboard-list"></i><span>Preparar para Claude</span></button>
         </div>
       </div>
       <div class="renewals-table">
@@ -5023,21 +5023,24 @@ function renewalReminderPrice(client, platform){
   return moneyNumber(client?.renewalPrice || client?.salePrice || configured?.renewalPrice || configured?.salePrice || 0);
 }
 
-function expiredRenewalReminderText(client, platform){
+function expiredRenewalReminderText(client, platform, dd){
   const service=friendlyPlatform(platform) || platform || 'streaming';
-  const price=renewalReminderPrice(client, service);
-  const priceLine=price
-    ? `Si deseas renovarlo por un mes, el precio es ${formatMoney(price)}.`
-    : 'Si deseas renovarlo, escríbeme y te ayudo con gusto.';
+  const whenLine = dd < 0
+    ? `tu servicio de *${service}* ya se venció 😔`
+    : dd === 0
+      ? `tu servicio de *${service}* vence *HOY* 📅`
+      : `tu servicio de *${service}* vence *MAÑANA* 📅`;
   return [
     '¡Hola! 👋✨',
     '',
-    `Te escribo para recordarte que tu servicio de ${service} ya se venció.`,
+    `Te escribo para avisarte que ${whenLine}`,
     '',
-    priceLine,
+    'Puedes renovar:',
+    '📌 1 mes → *S/ 5.00*',
+    '📌 3 meses → *S/ 13.00*',
     '',
-    'Puedes realizar el pago por Yape:',
-    '💜 939401721',
+    'Realiza tu pago por Yape:',
+    '💜 *939401721*',
     'A nombre de Bertha D. Nonajulca M.',
     '',
     'Cuando realices el pago, envíame la captura y te ayudo con la renovación ✅'
@@ -5045,21 +5048,24 @@ function expiredRenewalReminderText(client, platform){
 }
 
 window.copyExpiredRenewalsForCodex=async function(){
-  const rows=currentRenewalRows().filter(x=>x.dd!==null && x.dd<0 && normalizePhone(x.client.whatsapp));
-  const reminders=rows.map(({client,platform})=>({
+  const rows=currentRenewalRows().filter(x=>x.dd!==null && x.dd<=1 && normalizePhone(x.client.whatsapp));
+  const reminders=rows.map(({client,platform,dd})=>({
     clientId:String(client.id||''),
     phone:normalizePhone(client.whatsapp),
+    name:String(client.name||''),
     service:friendlyPlatform(platform) || platform || 'Streaming',
     dueDate:String(client.dueDate||''),
+    dd,
+    when: dd<0 ? 'vencido' : dd===0 ? 'hoy' : 'mañana',
     alreadyNotifiedToday:client.lastRenewalWhatsAppNoticeDate===todayStr(),
-    message:expiredRenewalReminderText(client,platform)
+    message:expiredRenewalReminderText(client,platform,dd)
   }));
   if(!reminders.length){
-    notifySaveStatus('error','No hay clientes vencidos con WhatsApp en esta vista.');
+    notifySaveStatus('error','No hay clientes (hoy/mañana/vencidos) con WhatsApp en esta vista.');
     return;
   }
   const payload=JSON.stringify({
-    type:'codex-renewal-reminders',
+    type:'claude-renewal-reminders',
     generatedAt:new Date().toISOString(),
     count:reminders.length,
     reminders
@@ -5072,14 +5078,14 @@ window.copyExpiredRenewalsForCodex=async function(){
       if(window.lucide && typeof window.lucide.createIcons==='function') window.lucide.createIcons();
       clearTimeout(window.__codexRenewalButtonTimer);
       window.__codexRenewalButtonTimer=setTimeout(()=>{
-        btn.innerHTML='<i data-lucide="clipboard-list"></i><span>Preparar para Codex</span>';
+        btn.innerHTML='<i data-lucide="clipboard-list"></i><span>Preparar para Claude</span>';
         if(window.lucide && typeof window.lucide.createIcons==='function') window.lucide.createIcons();
       },3000);
     }
-    notifySaveStatus('success',`${reminders.length} recordatorio${reminders.length===1?'':'s'} copiado${reminders.length===1?'':'s'} para Codex.`);
+    notifySaveStatus('success',`${reminders.length} recordatorio${reminders.length===1?'':'s'} copiado${reminders.length===1?'':'s'} — pega el JSON en Claude.`);
   }catch(error){
-    notifySaveStatus('error','No se pudo copiar la cola para Codex.');
-    console.warn('clipboard renovaciones Codex:',error);
+    notifySaveStatus('error','No se pudo copiar. Intenta de nuevo.');
+    console.warn('clipboard renovaciones Claude:',error);
   }
 };
 function secretMask(v){ return v ? '*'.repeat(Math.max(6,String(v).length)) : '-'; }

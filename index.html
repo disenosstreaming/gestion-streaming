@@ -5935,7 +5935,7 @@ function renderRenewals(){
       const phone=String(x.client.whatsapp||'');
       const phoneDigits=phone.replace(/\D+/g,'');
       const blob=[x.client.name,phone,x.platform,x.client.profile,x.account?.email,x.account?.provider,x.account?.notes,accountLabel(x.account||{})].join(' ').toLowerCase();
-      return x.st!=='No renovó'
+      return !isNoRenewState(x.client.state)
         && renewalAlertDays(x.dd)
         && (!currentFilter || x.platform===currentFilter)
         && (!q || blob.includes(q) || (qDigits && phoneDigits.includes(qDigits)));

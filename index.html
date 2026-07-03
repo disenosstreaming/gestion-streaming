@@ -5634,6 +5634,12 @@ function accountSectionLabel(key){
 }
 window.copyAccountEmail=async(id)=>{ const acc=state.accounts.find(a=>a.id===id); if(!acc?.email) return; try{ await navigator.clipboard.writeText(acc.email);}catch(e){} };
 window.copyAccountProvider=async(id)=>{ const acc=state.accounts.find(a=>a.id===id); if(!acc?.provider) return; try{ await navigator.clipboard.writeText(acc.provider);}catch(e){} };
+window.copyClientPhone=async(id)=>{
+  const client=state.clients.find(c=>c.id===id);
+  const phone=normalizePhone(client?.whatsapp);
+  if(!phone){ alert('Este cliente no tiene WhatsApp registrado.'); return; }
+  try{ await copyTextToClipboard(phone); notifySaveStatus('success','Numero copiado.'); }catch(e){ alert('No se pudo copiar el numero.'); }
+};
 
 function expiredCrunchyAccountsForChecker(){
   const seen=new Set();
@@ -5976,6 +5982,7 @@ function renderRenewals(){
         <details class="action-more">
           <summary class="renewal-more" title="Mas acciones">...</summary>
           <div class="action-more-menu">
+            <button class="mini" onclick="copyClientPhone('${client.id}')">Copiar numero</button>
             <button class="mini" onclick="setNoRenew('${client.id}')">No renovo</button>
           </div>
         </details>

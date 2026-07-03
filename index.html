@@ -5990,7 +5990,7 @@ function renderRenewals(){
             <strong>${escapeHtml(client.name||'Cliente')}</strong>
             <button class="copy-phone-btn" onclick="copyClientPhone('${client.id}')" title="Copiar numero"><i data-lucide="copy"></i></button>
           </div>
-          <div class="sub">${escapeHtml(friendlyPlatform(platform))} - Perfil ${escapeHtml(client.profile||'-')}</div>
+          <div class="sub">${escapeHtml(friendlyPlatform(platform))} - Perfil ${escapeHtml(client.profile||'-')}${client.whatsapp?` - ${escapeHtml(client.whatsapp)}`:''}</div>
         </div>
       </div>
       <div><span class="renewal-platform-pill">${platformLogo(platform,'chip')} ${escapeHtml(friendlyPlatform(platform)||'-')}</span></div>

@@ -1823,13 +1823,27 @@ select option:checked{
   font-weight:950;
 }
 .renewal-main{min-width:0}
+.renewal-name-row{display:flex;align-items:center;gap:6px;min-width:0}
 .renewal-main strong{
-  display:block;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
   font-size:15px;
+  min-width:0;
 }
+.copy-phone-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;flex:0 0 auto;
+  border-radius:7px;
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--border);
+  color:var(--text);
+  cursor:pointer;
+  transition:all .14s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.copy-phone-btn:hover{background:rgba(255,255,255,.09)}
+.copy-phone-btn svg{width:13px;height:13px}
 .renewal-main .sub{margin-top:3px}
 .renewal-platform-pill{
   display:inline-flex;
@@ -4948,8 +4962,7 @@ function normalizePhone(v){
   if(prefix && digits.length<=10) return prefix+digits;
   return digits;
 }
-function copyTextToClipboard(text){
-  if(navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+function copyTextToClipboardFallback(text){
   const area=document.createElement('textarea');
   area.value=text;
   area.setAttribute('readonly','');
@@ -4965,6 +4978,10 @@ function copyTextToClipboard(text){
   }finally{
     area.remove();
   }
+}
+function copyTextToClipboard(text){
+  if(navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).catch(()=>copyTextToClipboardFallback(text));
+  return copyTextToClipboardFallback(text);
 }
 function renewalPhoneGroupMatches(dd, groups){
   return (groups.includes('expired') && dd<0)
@@ -5967,7 +5984,10 @@ function renderRenewals(){
       <div class="renewal-client">
         <div class="renewal-avatar">${escapeHtml(initial)}</div>
         <div class="renewal-main">
-          <strong>${escapeHtml(client.name||'Cliente')}</strong>
+          <div class="renewal-name-row">
+            <strong>${escapeHtml(client.name||'Cliente')}</strong>
+            <button class="copy-phone-btn" onclick="copyClientPhone('${client.id}')" title="Copiar numero"><i data-lucide="copy"></i></button>
+          </div>
           <div class="sub">${escapeHtml(friendlyPlatform(platform))} - Perfil ${escapeHtml(client.profile||'-')}</div>
         </div>
       </div>
@@ -5982,7 +6002,6 @@ function renderRenewals(){
         <details class="action-more">
           <summary class="renewal-more" title="Mas acciones">...</summary>
           <div class="action-more-menu">
-            <button class="mini" onclick="copyClientPhone('${client.id}')">Copiar numero</button>
             <button class="mini" onclick="setNoRenew('${client.id}')">No renovo</button>
           </div>
         </details>

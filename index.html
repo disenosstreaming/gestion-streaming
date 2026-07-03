@@ -4966,18 +4966,20 @@ function copyTextToClipboardFallback(text){
   const area=document.createElement('textarea');
   area.value=text;
   area.setAttribute('readonly','');
+  area.contentEditable='true';
   area.style.position='fixed';
-  area.style.left='-9999px';
+  area.style.top='0';
+  area.style.left='0';
+  area.style.opacity='0';
+  area.style.fontSize='16px';
   document.body.appendChild(area);
+  area.focus();
   area.select();
-  try{
-    document.execCommand('copy');
-    return Promise.resolve();
-  }catch(err){
-    return Promise.reject(err);
-  }finally{
-    area.remove();
-  }
+  area.setSelectionRange(0,text.length);
+  let ok=false;
+  try{ ok=document.execCommand('copy'); }catch(err){ ok=false; }
+  area.remove();
+  return ok?Promise.resolve():Promise.reject(new Error('execCommand copy failed'));
 }
 function copyTextToClipboard(text){
   if(navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).catch(()=>copyTextToClipboardFallback(text));

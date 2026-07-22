@@ -36,13 +36,12 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA2zuPnReyy7eeTC8Lw_UfkfSg96-V5UnY",
-  authDomain: "plantillas-bfaeb.firebaseapp.com",
-  projectId: "plantillas-bfaeb",
-  storageBucket: "plantillas-bfaeb.firebasestorage.app",
-  messagingSenderId: "382002543593",
-  appId: "1:382002543593:web:87ad0a3b3c1f32b3daa978",
-  measurementId: "G-NX5226C0P4"
+  apiKey: "AIzaSyCpvrc0eDahxZa8MAHxmDHTkvTR7bWAIYs",
+  authDomain: "gestor-de-cuentas-a205a.firebaseapp.com",
+  projectId: "gestor-de-cuentas-a205a",
+  storageBucket: "gestor-de-cuentas-a205a.firebasestorage.app",
+  messagingSenderId: "892248047419",
+  appId: "1:892248047419:web:0d730a91a6d1f1050b011e"
 };
 
 const app  = initializeApp(firebaseConfig);
@@ -65,13 +64,13 @@ window.__auth = auth;
 window.__firebaseFns = { doc, getDoc, setDoc, getDocs, collection, onSnapshot, signOut, sendPasswordResetEmail };
 
 // â”€â”€ Helpers de ruta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function userRef(uid)      { return doc(db, 'users', uid); }
-function accountsCol(uid)  { return collection(db, 'users', uid, 'gestor_accounts'); }
-function clientsCol(uid)   { return collection(db, 'users', uid, 'gestor_clients'); }
-function financeCol(uid)   { return collection(db, 'users', uid, 'gestor_finance_movements'); }
-function settingsRef(uid)  { return doc(db, 'users', uid, 'gestor_config', 'settings'); }
-function devicesCol(uid)   { return collection(db, 'users', uid, 'devices'); }
-function adminGestorUsageRef(day){ return doc(db, 'admin_metrics', `gestor_usage_${day}`); }
+function userRef(uid)      { return doc(db, 'usuarios', uid); }
+function managerMetaRef(uid){ return doc(db, 'usuarios', uid, 'config', 'meta'); }
+function accountsCol(uid)  { return collection(db, 'usuarios', uid, 'accounts'); }
+function clientsCol(uid)   { return collection(db, 'usuarios', uid, 'clients'); }
+function financeCol(uid)   { return collection(db, 'usuarios', uid, 'finance_movements'); }
+function settingsRef(uid)  { return doc(db, 'usuarios', uid, 'config', 'settings'); }
+function devicesCol(uid)   { return collection(db, 'usuarios', uid, 'devices'); }
 const FINANCE_RECENT_LIMIT = 350;
 
 function usageDayId(date = new Date()) {
@@ -83,32 +82,7 @@ function usageDayId(date = new Date()) {
   }).format(date);
 }
 
-async function trackGestorDailyUsage(user, surface='desktop') {
-  if(!user?.uid) return;
-  const day = usageDayId();
-  const cacheKey = `gestor_usage_${user.uid}_${day}`;
-  try {
-    if(localStorage.getItem(cacheKey)) return;
-    const now = Date.now();
-    const adminUsage = {
-      day,
-      updatedAt:now,
-      countApprox:increment(1),
-      users:{
-        [user.uid]:{
-          email:user.email || '',
-          lastSeenAt:now,
-          surfaces:{ [surface]:true }
-        }
-      }
-    };
-    await setDoc(adminGestorUsageRef(day), adminUsage, { merge:true });
-    localStorage.setItem(cacheKey, String(now));
-  } catch (err) {
-    try { localStorage.setItem(cacheKey, 'blocked'); } catch(_) {}
-    console.warn('No se pudo registrar actividad diaria del gestor:', err);
-  }
-}
+async function trackGestorDailyUsage(user, surface='desktop') { /* disabled: preserva el proyecto y evita escrituras extra */ }
 
 function financeMonthStartIso() {
   const now = new Date();
@@ -310,7 +284,7 @@ function detectGestorDeviceSuspicion(existing, fingerprint, activeDevices, isNew
 
 async function registerGestorDevice(uid) {
   const deviceId = getGestorDeviceId();
-  const devRef = doc(db, 'users', uid, 'devices', deviceId);
+  const devRef = doc(db, 'usuarios', uid, 'devices', deviceId);
   const currentSnap = await getDoc(devRef);
   const existing = currentSnap.exists() ? { id: currentSnap.id, ...currentSnap.data() } : null;
   const now = Date.now();
@@ -340,12 +314,12 @@ async function registerGestorDevice(uid) {
   const snap = await getDocs(devicesCol(uid));
   const devices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const expired = devices.filter(d => d.id !== deviceId && !d.revoked && isGestorDeviceExpired(d));
-  await Promise.all(expired.map(d => deleteDoc(doc(db, 'users', uid, 'devices', d.id)).catch(() => {})));
+  await Promise.all(expired.map(d => deleteDoc(doc(db, 'usuarios', uid, 'devices', d.id)).catch(() => {})));
   const usableDevices = devices.filter(d => !expired.some(x => x.id === d.id));
   const activeDevices = usableDevices.filter(d => !d.revoked && !isGestorDeviceExpired(d));
   const sameFingerprint = activeDevices.find(d => d.fingerprintHash && d.fingerprintHash === fingerprint.hash);
   if (sameFingerprint) {
-    const matchingRef = doc(db, 'users', uid, 'devices', sameFingerprint.id);
+    const matchingRef = doc(db, 'usuarios', uid, 'devices', sameFingerprint.id);
     await setDoc(matchingRef, {
       name: fingerprint.label,
       deviceLabel: fingerprint.label,
@@ -387,7 +361,7 @@ async function migrateIfNeeded(uid) {
 
 // â”€â”€ Cargar datos desde subcolecciones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadFromSubcollections(uid) {
-  const cacheKey = 'gestion_streaming_v5';
+  const cacheKey = 'gestion_streaming_v4';
   const cacheTimeKey = cacheKey + '_synced_at';
   const cacheTtlMs = 30 * 60 * 1000;
   try {
@@ -515,7 +489,7 @@ function friendlySaveError(err) {
 }
 
 async function permissionDebugMessage(uid, colName) {
-  const path = `users/${uid}/${colName === 'accounts' ? 'gestor_accounts' : 'gestor_clients'}`;
+  const path = `usuarios/${uid}/${colName === 'accounts' ? 'accounts' : 'clients'}`;
   try {
     const snap = await getDoc(userRef(uid));
     const data = snap.exists() ? snap.data() : {};
@@ -5290,7 +5264,7 @@ function focusClientAfterSale(client){
   window.syncEnhancedSelects?.();
   window.scrollTo({top:0,behavior:'smooth'});
 }
-const KEY='gestion_streaming_v5';
+const KEY='gestion_streaming_v4';
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
 const DEFAULT_FINAL_MESSAGE='Gracias por tu compra. Cualquier duda me escribes.';
@@ -8185,7 +8159,7 @@ function startSecurityDeviceListener(uid){
   if(securityDeviceUnsub) securityDeviceUnsub();
   const id=currentDeviceId();
   if(!uid || !id || !fns.onSnapshot || !fns.doc || !window.__db) return;
-  securityDeviceUnsub=fns.onSnapshot(fns.doc(window.__db,'users',uid,'devices',id),snap=>{
+  securityDeviceUnsub=fns.onSnapshot(fns.doc(window.__db,'usuarios',uid,'devices',id),snap=>{
     if(snap.exists() && snap.data()?.revoked === true){
       if(securityDeviceUnsub){ securityDeviceUnsub(); securityDeviceUnsub=null; }
       fns.signOut(window.__auth).finally(()=>{ window.location.href='gestor-login.html'; });
@@ -8207,7 +8181,7 @@ function deviceSubLabel(d){
 async function getSecurityDevices(user){
   if(!user) return [];
   const fns = window.__firebaseFns || {};
-  const snap = await fns.getDocs(fns.collection(window.__db,'users',user.uid,'devices'));
+  const snap = await fns.getDocs(fns.collection(window.__db,'usuarios',user.uid,'devices'));
   return snap.docs.map(d=>({id:d.id,...d.data()}))
     .sort((a,b)=>deviceSeenValue(b)-deviceSeenValue(a));
 }
@@ -8290,7 +8264,7 @@ window.revokeSecurityDevice=async function(deviceId){
   const isCurrent=deviceId===currentDeviceId();
   if(!confirm(isCurrent ? 'Cerrar sesion en este dispositivo?' : 'Vetar este dispositivo? No podra entrar de nuevo mientras siga vetado.')) return;
   try{
-    await fns.setDoc(fns.doc(window.__db,'users',user.uid,'devices',deviceId),{revoked:true,revokedAt:Date.now()},{merge:true});
+    await fns.setDoc(fns.doc(window.__db,'usuarios',user.uid,'devices',deviceId),{revoked:true,revokedAt:Date.now()},{merge:true});
     notifySaveStatus('success', isCurrent ? 'Sesion cerrada.' : 'Dispositivo vetado.');
     if(isCurrent){
       await fns.signOut(window.__auth);
@@ -8308,7 +8282,7 @@ window.allowSecurityDevice=async function(deviceId){
   if(!user || !deviceId) return;
   if(!confirm('Permitir de nuevo este dispositivo?')) return;
   try{
-    await fns.setDoc(fns.doc(window.__db,'users',user.uid,'devices',deviceId),{revoked:false,unrevokedAt:Date.now()},{merge:true});
+    await fns.setDoc(fns.doc(window.__db,'usuarios',user.uid,'devices',deviceId),{revoked:false,unrevokedAt:Date.now()},{merge:true});
     notifySaveStatus('success','Dispositivo permitido de nuevo.');
     renderSecurityView();
   }catch(err){
@@ -8385,7 +8359,7 @@ $('#syncBtn').onclick=async()=>{
   btn.innerHTML='<i data-lucide="refresh-cw"></i><span>Sincronizando...</span>';
   if(window.lucide) lucide.createIcons();
   try{
-    localStorage.removeItem('gestion_streaming_v5_synced_at');
+    localStorage.removeItem('gestion_streaming_v4_synced_at');
     if(window.__forceSyncFromFirestore) await window.__forceSyncFromFirestore();
   }catch(e){ console.warn('Sync error:',e); }
   finally{

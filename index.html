@@ -27,10 +27,9 @@
 </script>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
-import { getAuth, onAuthStateChanged, signOut, sendPasswordResetEmail, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, onAuthStateChanged, signOut, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  getFirestore,
   doc, getDoc, setDoc, deleteDoc,
   collection, getDocs, writeBatch, onSnapshot, query, where, orderBy, limit, increment
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -45,19 +44,8 @@ const firebaseConfig = {
 };
 
 const app  = initializeApp(firebaseConfig);
-const APP_CHECK_SITE_KEY = window.FIREBASE_APPCHECK_SITE_KEY || '';
-if (APP_CHECK_SITE_KEY) {
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(APP_CHECK_SITE_KEY),
-    isTokenAutoRefreshEnabled: true
-  });
-}
 const auth = getAuth(app);
-setPersistence(auth, browserLocalPersistence).catch(() => {});
-const db   = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
-});
+const db   = getFirestore(app);
 
 window.__db   = db;
 window.__auth = auth;
@@ -82,7 +70,7 @@ function usageDayId(date = new Date()) {
   }).format(date);
 }
 
-async function trackGestorDailyUsage(user, surface='desktop') { /* disabled: preserva el proyecto y evita escrituras extra */ }
+async function trackGestorDailyUsage(user, surface='desktop') { /* Desactivado: no crea datos adicionales. */ }
 
 function financeMonthStartIso() {
   const now = new Date();

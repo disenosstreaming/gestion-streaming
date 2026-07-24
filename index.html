@@ -6949,6 +6949,17 @@ function renewalPaymentLines(){
     })
     .join('\n');
 }
+function renewalOfferLines(platform){
+  const p=normalizeText(platform||'');
+  if(p.includes('hbo') || p==='max'){
+    return [
+      'Puedes renovar con estas opciones:',
+      '\ud83d\udccc 1 mes \u2192 S/ 6',
+      '\ud83d\udccc 3 meses \u2192 S/ 14'
+    ].join('\n');
+  }
+  return '';
+}
 function credentialsText(client, account){
   if(isActivationByCode(client?.activationByCode)) return codeActivationMessageText();
   const platform=friendlyPlatform(client.platform||account?.platform);
@@ -6973,6 +6984,7 @@ function whatsappText(client){
   const platform=friendlyPlatform(client.platform||account?.platform);
   const dd=daysUntil(client.dueDate);
   const payment=renewalPaymentLines();
+  const offer=renewalOfferLines(platform);
   const status=dd===0
     ? 'vence hoy'
     : dd===1
@@ -6994,8 +7006,9 @@ function whatsappText(client){
       `\ud83d\udccc Tu cuenta de ${platform} ${status}.`,
       ...accessLines,
       '',
-      '\ud83d\udd04 Por favor confirmar su renovaci\u00f3n realizando el pago a nuestros medios Medio de pago:',
-      ...(payment ? ['', payment] : []),
+      '\ud83d\udd04 Si deseas renovar, te comparto las opciones y medios de pago:',
+      ...(offer ? ['', offer] : []),
+      ...(payment ? ['', 'Medios de pago:', payment] : []),
       '',
       '\u2705 Gracias por tu preferencia.'
     ].join('\n');

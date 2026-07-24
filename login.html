@@ -214,6 +214,14 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const params = new URLSearchParams(window.location.search);
+const nextUrl = (() => {
+  const raw = String(params.get('next') || 'index.html').trim();
+  if (!raw) return 'index.html';
+  if (/^https?:\/\//i.test(raw)) return 'index.html';
+  if (raw.includes('gestor-login.html')) return 'index.html';
+  if (raw.includes('gestor.html')) return 'index.html';
+  return raw.startsWith('/') ? `.${raw}` : raw;
+})();
 if (params.get('registered') === '1') {
   showSuccess('Cuenta creada. Revisa tu correo para verificarla y luego inicia sesión.');
 }
@@ -223,7 +231,7 @@ if (params.get('reset') === '1') {
 
 // Si ya está logueado, redirige directo
 onAuthStateChanged(auth, user => {
-  if (user) window.location.href = 'index.html';
+  if (user) window.location.href = nextUrl;
 });
 
 window.handleLogin = async function() {

@@ -492,15 +492,15 @@ async function permissionDebugMessage(uid, colName) {
 // â”€â”€ Auth listener â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 onAuthStateChanged(auth, async user => {
   if (!user) {
-    const next = '/gestor.html';
-    window.location.href = `/gestor-login.html?next=${encodeURIComponent(next)}`;
+    const next = '/index.html';
+    window.location.href = `./login.html?next=${encodeURIComponent(next)}`;
     return;
   }
 
   const userSnap = await getDoc(userRef(user.uid));
   if (!userSnap.exists()) {
     await signOut(auth);
-    window.location.href = 'gestor-login.html';
+    window.location.href = 'login.html';
     return;
   }
 
@@ -529,7 +529,7 @@ onAuthStateChanged(auth, async user => {
       : `Limite de ${MAX_GESTOR_DEVICES} dispositivos alcanzado. Cierra uno desde Seguridad o contacta al administrador.`;
     alert(msg);
     await signOut(auth);
-    window.location.href = 'gestor-login.html';
+    window.location.href = 'login.html';
     return;
   }
 
@@ -774,7 +774,7 @@ window.__persistToFirestore = async function(stateData) {
 
 window.firebaseSignOut = async function() {
   await signOut(auth);
-  window.location.href = 'gestor-login.html';
+  window.location.href = 'login.html';
 };
 
 // â”€â”€ Escritura de documento individual (1 op) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -8150,7 +8150,7 @@ function startSecurityDeviceListener(uid){
   securityDeviceUnsub=fns.onSnapshot(fns.doc(window.__db,'usuarios',uid,'devices',id),snap=>{
     if(snap.exists() && snap.data()?.revoked === true){
       if(securityDeviceUnsub){ securityDeviceUnsub(); securityDeviceUnsub=null; }
-      fns.signOut(window.__auth).finally(()=>{ window.location.href='gestor-login.html'; });
+      fns.signOut(window.__auth).finally(()=>{ window.location.href='login.html'; });
     }
   },()=>{});
 }
@@ -8256,7 +8256,7 @@ window.revokeSecurityDevice=async function(deviceId){
     notifySaveStatus('success', isCurrent ? 'Sesion cerrada.' : 'Dispositivo vetado.');
     if(isCurrent){
       await fns.signOut(window.__auth);
-      window.location.href='gestor-login.html';
+      window.location.href='login.html';
       return;
     }
     renderSecurityView();

@@ -5951,6 +5951,18 @@ window.copyRenewalPhones=async function(){
     notifySaveStatus('error','No se pudo copiar.');
   }
 };
+window.copyClientWhatsapp=async function(clientId){
+  const client=state.clients.find(c=>c.id===clientId);
+  const raw=String(client?.whatsapp||'').trim();
+  const phone=normalizePhone(raw);
+  if(!phone){ notifySaveStatus('error','Este cliente no tiene WhatsApp registrado.'); return; }
+  try{
+    await copyTextToClipboard(phone);
+    notifySaveStatus('copy',`Numero copiado: ${phone}`);
+  }catch(_){
+    notifySaveStatus('copyFail','No se pudo copiar el numero.');
+  }
+};
 function secretMask(v){ return v ? '*'.repeat(Math.max(6,String(v).length)) : '-'; }
 function escapeHtml(str){ return String(str??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function escapeAttr(str){ return String(str??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -6776,6 +6788,10 @@ function renderRenewals(){
         <div class="renewal-main">
           <strong>${escapeHtml(client.name||'Cliente')}</strong>
           <div class="sub renewal-account-email">${escapeHtml(accountEmail || 'Sin correo de cuenta madre')}</div>
+          <div class="sub renewal-phone-line" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+            <span>${escapeHtml(client.whatsapp || 'Sin WhatsApp')}</span>
+            ${client.whatsapp ? `<button class="mini" type="button" onclick="copyClientWhatsapp('${client.id}')">Copiar numero</button>` : ''}
+          </div>
         </div>
       </div>
       <div><span class="renewal-platform-pill">${platformLogo(platform,'chip')} ${escapeHtml(friendlyPlatform(platform)||'-')}</span></div>

@@ -6950,7 +6950,11 @@ function renewalPaymentLines(){
     .join('\n');
 }
 function renewalOfferLines(platform){
-  const p=normalizeText(platform||'');
+  const p=String(platform||'')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+    .trim();
   if(p.includes('hbo') || p==='max'){
     return [
       'Puedes renovar con estas opciones:',

@@ -6986,6 +6986,7 @@ function codeActivationMessageText(){
 function whatsappText(client){
   const account=state.accounts.find(a=>a.id===client.accountId);
   const platform=friendlyPlatform(client.platform||account?.platform);
+  const isHboRenewal=String(platform||'').toLowerCase().includes('hbo') || String(platform||'').toLowerCase().includes('max');
   const dd=daysUntil(client.dueDate);
   const payment=renewalPaymentLines();
   const offer=renewalOfferLines(platform);
@@ -6997,20 +6998,27 @@ function whatsappText(client){
         ? `venci\u00f3 el ${fmtDateLong(client.dueDate) || client.dueDate || 'd\u00eda indicado'}`
         : 'est\u00e1 pr\u00f3xima a vencer';
   if(isNoRenewState(client.state) || (dd!==null && dd<=1)){
-    const accessLines=isActivationByCode(client?.activationByCode) ? [] : [
+    const accessLines=isActivationByCode(client?.activationByCode) || isHboRenewal ? [] : [
       '',
       `\ud83c\udfac Perfil: ${client.profile || '-'}`,
       `\ud83d\udce7 Correo: ${account?.email || '-'}`,
       `\ud83d\udd11 Contrase\u00f1a: ${account?.password || '-'}`,
       `\ud83d\udd10 PIN: ${client.pin || '-'}`
     ];
+    const hboEmailLines=isHboRenewal ? [
+      '',
+      `\ud83d\udce7 Correo: ${account?.email || '-'}`
+    ] : [];
     return [
       `Hola, ${client.name || ''} \ud83d\udc4b\u2728`,
       '',
       `\ud83d\udccc Tu cuenta de ${platform} ${status}.`,
+      ...hboEmailLines,
       ...accessLines,
       '',
-      '\ud83d\udd04 Si deseas renovar, te comparto las opciones y medios de pago:',
+      isHboRenewal
+        ? '\ud83d\udd04 Si deseas renovar, te comparto los planes y medios de pago:'
+        : '\ud83d\udd04 Si deseas renovar, te comparto las opciones y medios de pago:',
       ...(offer ? ['', offer] : []),
       ...(payment ? ['', 'Medios de pago:', payment] : []),
       '',

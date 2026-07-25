@@ -349,18 +349,36 @@ async function migrateIfNeeded(uid) {
 
 // â”€â”€ Cargar datos desde subcolecciones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadFromSubcollections(uid) {
-  const cacheKey = 'gestion_streaming_v4';
+  const cacheKey = 'gestion_streaming_v5';
   const cacheTimeKey = cacheKey + '_synced_at';
-  const cacheTtlMs = 30 * 60 * 1000;
+  const cacheTtlMs = 7 * 24 * 60 * 60 * 1000;
+  const cacheRevisionKey = cacheKey + '_revision';
+  let cachedAt = 0;
+  let cached = null;
   try {
-    const cachedAt = Number(localStorage.getItem(cacheTimeKey) || 0);
-    const cached = localStorage.getItem(cacheKey);
-    const forceFresh = new URLSearchParams(location.search).has('fresh');
-    if (!forceFresh && cached && cachedAt && Date.now() - cachedAt < cacheTtlMs && window.__loadFromFirestore) {
+    cachedAt = Number(localStorage.getItem(cacheTimeKey) || 0);
+    cached = localStorage.getItem(cacheKey);
+  } catch (e) { console.warn('Cache local inválida, recargando desde Firestore:', e); }
+  // `?fresh=1` no descarga por accidente todos los clientes. Solo el botón
+  // Sincronizar solicita una carga completa con `fresh=force`.
+  const forceFresh = new URLSearchParams(location.search).get('fresh') === 'force';
+  if (!forceFresh && cached && cachedAt && Date.now() - cachedAt < cacheTtlMs && window.__loadFromFirestore) {
+    try {
+      const metaSnap = await getDoc(managerMetaRef(uid));
+      const remoteRevision = metaSnap.exists() ? String(metaSnap.data()?.inventoryRevision || '') : '';
+      const cachedRevision = String(localStorage.getItem(cacheRevisionKey) || '');
+      if (remoteRevision === cachedRevision) {
+        window.__loadFromFirestore(JSON.parse(cached));
+        return;
+      }
+    } catch (err) {
+      // Si Firestore está limitado temporalmente, conserva los últimos datos
+      // locales y evita otra descarga masiva que empeore la cuota.
+      console.warn('No se pudo comprobar la versión remota; se usa caché local:', err);
       window.__loadFromFirestore(JSON.parse(cached));
       return;
     }
-  } catch (e) { console.warn('Cache local inválida, recargando desde Firestore:', e); }
+  }
   const [setSnap, accSnap, cliSnap, finSnap] = await Promise.all([
     getDoc(settingsRef(uid)),
     getDocs(accountsCol(uid)),
@@ -373,7 +391,12 @@ async function loadFromSubcollections(uid) {
   const clients   = cliSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const financeMovements = finSnap;
   window.__loadFromFirestore({ accounts, clients, financeMovements, financeMovementsFullLoaded: false, settings });
-  try { localStorage.setItem(cacheTimeKey, String(Date.now())); } catch (e) {}
+  try {
+    const metaSnap = await getDoc(managerMetaRef(uid));
+    const remoteRevision = metaSnap.exists() ? String(metaSnap.data()?.inventoryRevision || '') : '';
+    localStorage.setItem(cacheTimeKey, String(Date.now()));
+    localStorage.setItem(cacheRevisionKey, remoteRevision);
+  } catch (e) {}
 }
 
 // Carga solo al abrir o al recargar la pagina para reducir lecturas de Firestore.
@@ -785,8 +808,13 @@ window.__persistSingleDoc = async function(colName, docData) {
     const uid = user.uid;
     const colRef = colName === 'accounts' ? accountsCol(uid) : clientsCol(uid);
     const safeData = sanitizeGestorDocForFirestore(colName, docData);
+    const revision = new Date().toISOString();
     notifySaveStatus('saving', 'Guardando dato...');
-    await setDoc(doc(colRef, safeData.id), safeData, { merge: true });
+    const batch = writeBatch(db);
+    batch.set(doc(colRef, safeData.id), safeData, { merge: true });
+    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision }, { merge: true });
+    await batch.commit();
+    try { localStorage.setItem('gestion_streaming_v5_revision', revision); } catch (_) {}
     notifySaveStatus('success', colName === 'accounts' ? 'Cuenta madre guardada.' : 'Cliente guardado.');
     return true;
   } catch (err) {
@@ -805,8 +833,13 @@ window.__persistDeleteDoc = async function(colName, docId) {
   try {
     const uid = user.uid;
     const colRef = colName === 'accounts' ? accountsCol(uid) : clientsCol(uid);
+    const revision = new Date().toISOString();
     notifySaveStatus('saving', 'Eliminando dato...');
-    await deleteDoc(doc(colRef, docId));
+    const batch = writeBatch(db);
+    batch.delete(doc(colRef, docId));
+    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision }, { merge: true });
+    await batch.commit();
+    try { localStorage.setItem('gestion_streaming_v5_revision', revision); } catch (_) {}
     notifySaveStatus('success', 'Dato eliminado correctamente.');
     return true;
   } catch (err) {
@@ -887,7 +920,16 @@ window.__persistDeleteFinanceMovementDoc = async function(docId) {
 };
 window.__forceSyncFromFirestore = async () => {
   const user = auth.currentUser;
-  if(user) await loadFromSubcollections(user.uid);
+  if(!user) return;
+  const url = new URL(location.href);
+  url.searchParams.set('fresh', 'force');
+  history.replaceState(null, '', url);
+  try {
+    await loadFromSubcollections(user.uid);
+  } finally {
+    url.searchParams.delete('fresh');
+    history.replaceState(null, '', url);
+  }
 };
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -5252,7 +5294,7 @@ function focusClientAfterSale(client){
   window.syncEnhancedSelects?.();
   window.scrollTo({top:0,behavior:'smooth'});
 }
-const KEY='gestion_streaming_v4';
+const KEY='gestion_streaming_v5';
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
 const DEFAULT_FINAL_MESSAGE='Gracias por tu compra. Cualquier duda me escribes.';
@@ -8388,7 +8430,7 @@ $('#syncBtn').onclick=async()=>{
   btn.innerHTML='<i data-lucide="refresh-cw"></i><span>Sincronizando...</span>';
   if(window.lucide) lucide.createIcons();
   try{
-    localStorage.removeItem('gestion_streaming_v4_synced_at');
+    localStorage.removeItem('gestion_streaming_v5_synced_at');
     if(window.__forceSyncFromFirestore) await window.__forceSyncFromFirestore();
   }catch(e){ console.warn('Sync error:',e); }
   finally{

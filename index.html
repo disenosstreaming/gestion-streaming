@@ -812,6 +812,12 @@ window.__persistSingleDoc = async function(colName, docData) {
     notifySaveStatus('saving', 'Guardando dato...');
     const batch = writeBatch(db);
     batch.set(doc(colRef, safeData.id), safeData, { merge: true });
+    const availabilityUpdates = window.__availabilityForPersist
+      ? window.__availabilityForPersist(colName, safeData, { deleted: false })
+      : [];
+    for (const update of availabilityUpdates) {
+      batch.set(doc(accountsCol(uid), update.accountId), update.fields, { merge: true });
+    }
     batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision }, { merge: true });
     await batch.commit();
     try { localStorage.setItem('gestion_streaming_v5_revision', revision); } catch (_) {}
@@ -837,6 +843,12 @@ window.__persistDeleteDoc = async function(colName, docId) {
     notifySaveStatus('saving', 'Eliminando dato...');
     const batch = writeBatch(db);
     batch.delete(doc(colRef, docId));
+    const availabilityUpdates = window.__availabilityForPersist
+      ? window.__availabilityForPersist(colName, { id: docId }, { deleted: true })
+      : [];
+    for (const update of availabilityUpdates) {
+      batch.set(doc(accountsCol(uid), update.accountId), update.fields, { merge: true });
+    }
     batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision }, { merge: true });
     await batch.commit();
     try { localStorage.setItem('gestion_streaming_v5_revision', revision); } catch (_) {}
@@ -5424,6 +5436,39 @@ function persistDeleteDoc(colName, docId){
   if(window.__persistDeleteDoc) return window.__persistDeleteDoc(colName, docId);
   return Promise.resolve(false);
 }
+// El índice disponible se guarda junto a cada cuenta madre. BotFlow puede
+// asignar desde ese dato sin descargar todos los clientes del gestor.
+function availableProfilesForAccount(account, clients){
+  const capacity=Math.max(0,Number(account?.capacity||0)||0);
+  const active=(clients||[]).filter(c=>String(c?.accountId||'')===String(account?.id||''))
+    .filter(c=>!isNoRenewState(c?.state));
+  if(active.some(c=>c?.fullAccountSale===true)) return [];
+  const used=new Set(active.map(c=>String(c?.profile||'').trim()).filter(Boolean));
+  const profiles=[];
+  for(let i=1;i<=capacity;i++) if(!used.has(String(i))) profiles.push(String(i));
+  return profiles;
+}
+window.__availabilityForPersist=function(colName, docData={}, options={}){
+  if(typeof state==='undefined') return [];
+  if(colName==='accounts'){
+    if(options.deleted) return [];
+    const previous=(state.accounts||[]).find(a=>String(a.id)===String(docData.id))||{};
+    const account={...previous,...docData};
+    const profiles=availableProfilesForAccount(account,state.clients||[]);
+    return [{accountId:String(account.id),fields:{availableProfiles:profiles,hasFreeProfiles:profiles.length>0,availabilityIndexedAt:new Date().toISOString()}}];
+  }
+  if(colName!=='clients') return [];
+  const previous=(state.clients||[]).find(c=>String(c.id)===String(docData.id));
+  const accountIds=[previous?.accountId,docData?.accountId].filter(Boolean).map(String).filter((id,index,list)=>list.indexOf(id)===index);
+  const projected=(state.clients||[]).filter(c=>String(c.id)!==String(docData.id));
+  if(!options.deleted && docData?.accountId) projected.push(docData);
+  return accountIds.map(accountId=>{
+    const account=(state.accounts||[]).find(a=>String(a.id)===accountId);
+    if(!account) return null;
+    const profiles=availableProfilesForAccount(account,projected);
+    return {accountId,fields:{availableProfiles:profiles,hasFreeProfiles:profiles.length>0,availabilityIndexedAt:new Date().toISOString()}};
+  }).filter(Boolean);
+};
 function sanitizeSettingsForSave(settings={}){
   const financeCurrencyValue=String(settings.financeCurrency || 'PEN').trim().toUpperCase().slice(0,8) || 'PEN';
   return {

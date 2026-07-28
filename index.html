@@ -2375,6 +2375,27 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr:hover td{background:rgba(255,255,255,.02)}
 .name{font-weight:800;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:12px;margin-top:3px}
+.copy-inline{
+  display:inline-flex;align-items:center;gap:6px;max-width:100%;
+}
+.copy-inline > span{min-width:0;overflow-wrap:anywhere}
+.copy-inline-btn{
+  width:30px;height:30px;flex:0 0 30px;padding:0;
+  display:inline-grid;place-items:center;
+  border:1px solid rgba(148,163,184,.22);border-radius:9px;
+  color:var(--muted);background:rgba(148,163,184,.07);cursor:pointer;
+  transition:transform .16s var(--ease),background .16s ease,border-color .16s ease,color .16s ease;
+}
+.copy-inline-btn:hover,.copy-inline-btn:focus-visible{
+  color:#ddd6fe;background:rgba(124,109,255,.16);border-color:rgba(167,139,250,.42);outline:none;
+}
+.copy-inline-btn:active{transform:scale(.88)}
+.copy-inline-btn svg{width:15px;height:15px;stroke-width:2.4}
+.copy-inline-btn.is-copied{
+  color:#a7f3d0;background:rgba(34,197,94,.16);border-color:rgba(52,211,153,.38);
+  animation:copy-confirm .52s var(--ease);
+}
+@keyframes copy-confirm{0%{transform:scale(.84)}55%{transform:scale(1.16)}100%{transform:scale(1)}}
 
 /* â”€â”€â”€ Status chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .chip{
@@ -6053,16 +6074,46 @@ window.copyRenewalPhones=async function(){
     notifySaveStatus('error','No se pudo copiar.');
   }
 };
-window.copyClientWhatsapp=async function(clientId){
+function showCopyConfirmation(button){
+  if(!button) return;
+  const previous=button.innerHTML;
+  button.classList.add('is-copied');
+  button.innerHTML='<i data-lucide="check"></i>';
+  button.setAttribute('aria-label','Copiado');
+  button.setAttribute('title','Copiado');
+  window.lucide?.createIcons?.();
+  clearTimeout(button.__copyConfirmationTimer);
+  button.__copyConfirmationTimer=setTimeout(()=>{
+    button.classList.remove('is-copied');
+    button.innerHTML=previous;
+    button.setAttribute('aria-label','Copiar');
+    button.setAttribute('title','Copiar');
+    window.lucide?.createIcons?.();
+  },1800);
+}
+window.copyClientWhatsapp=async function(clientId, button){
   const client=state.clients.find(c=>c.id===clientId);
   const raw=String(client?.whatsapp||'').trim();
   const phone=normalizePhone(raw);
   if(!phone){ notifySaveStatus('error','Este cliente no tiene WhatsApp registrado.'); return; }
   try{
     await copyTextToClipboard(phone);
+    showCopyConfirmation(button);
     notifySaveStatus('copy',`Numero copiado: ${phone}`);
   }catch(_){
     notifySaveStatus('copyFail','No se pudo copiar el numero.');
+  }
+};
+window.copyClientAccountEmail=async function(accountId, button){
+  const account=state.accounts.find(a=>a.id===accountId);
+  const email=String(account?.email||'').trim();
+  if(!email){ notifySaveStatus('error','Esta cuenta no tiene correo registrado.'); return; }
+  try{
+    await copyTextToClipboard(email);
+    showCopyConfirmation(button);
+    notifySaveStatus('copy','Correo copiado');
+  }catch(_){
+    notifySaveStatus('copyFail','No se pudo copiar el correo.');
   }
 };
 function secretMask(v){ return v ? '*'.repeat(Math.max(6,String(v).length)) : '-'; }
@@ -6473,6 +6524,8 @@ function renderClients(){
     const account=state.accounts.find(a=>a.id===c.accountId);
     const st=effectiveClientState(c);
     const platform=c.platform||account?.platform||'';
+    const phone=String(c.whatsapp||'').trim();
+    const accountName=account ? accountLabel(account) : '-';
     return `<tr>
       <td>
         <div class="client-name-cell">
@@ -6481,14 +6534,14 @@ function renderClients(){
           ${c.notes?`<div class="sub">${escapeHtml(c.notes)}</div>`:''}
         </div>
       </td>
-      <td>${escapeHtml(c.whatsapp||'')}</td>
+      <td>${phone ? `<div class="copy-inline"><span>${escapeHtml(phone)}</span><button type="button" class="copy-inline-btn" title="Copiar número" aria-label="Copiar número" onclick="copyClientWhatsapp('${c.id}',this)"><i data-lucide="copy"></i></button></div>` : '-'}</td>
       <td>
         <div style="display:flex;align-items:center;gap:6px">
           ${platformLogo(platform,'chip')}
           <span style="font-weight:700;font-size:13px">${escapeHtml(platform||'-')}</span>
         </div>
       </td>
-      <td>${escapeHtml(account ? accountLabel(account) : '-')}</td>
+      <td>${account?.email ? `<div class="copy-inline"><span>${escapeHtml(accountName)}</span><button type="button" class="copy-inline-btn" title="Copiar correo" aria-label="Copiar correo" onclick="copyClientAccountEmail('${account.id}',this)"><i data-lucide="copy"></i></button></div>` : escapeHtml(accountName)}</td>
       <td>${escapeHtml(c.profile||'')}</td>
       <td>${escapeHtml(c.pin||'-')}</td>
       <td>${fmtDate(c.dueDate)}</td>
@@ -6532,6 +6585,7 @@ function renderClients(){
         </div>
       </details>` : '';
   }
+  window.lucide?.createIcons?.();
 }
 
 function orderedPlatforms(accounts=state.accounts){

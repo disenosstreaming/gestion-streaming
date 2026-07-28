@@ -5996,22 +5996,35 @@ function renewalPhoneGroupMatches(dd, groups){
     || (groups.includes('today') && dd===0)
     || (groups.includes('tomorrow') && dd===1);
 }
+function renewalRowMatchesSearch(row, rawQuery){
+  const q=String(rawQuery||'').trim().toLowerCase();
+  if(!q) return true;
+  const accountEmail=String(row.account?.email||'').trim().toLowerCase();
+  if(q.includes('@')) return accountEmail===q;
+  const phone=String(row.client?.whatsapp||'');
+  if(/^[+\d\s().-]+$/.test(q)){
+    const qDigits=q.replace(/\D+/g,'');
+    const phoneDigits=phone.replace(/\D+/g,'');
+    return qDigits.length>0 && phoneDigits.includes(qDigits);
+  }
+  const blob=[row.client?.name,phone,row.platform,row.client?.profile,accountEmail,row.account?.provider,row.account?.notes,accountLabel(row.account||{})]
+    .join(' ')
+    .toLowerCase();
+  return blob.includes(q);
+}
+
 function currentRenewalRows(){
   const currentFilter=$('#renewalAccountFilter')?.value||'';
   const q=($('#renewalSearch')?.value||'').trim().toLowerCase();
-  const qDigits=q.replace(/\D+/g,'');
   return state.clients.map(c=>{
     const account=state.accounts.find(a=>a.id===c.accountId);
     return {client:c,account,platform:c.platform || account?.platform || '',dd:daysUntil(c.dueDate),st:effectiveClientState(c)};
   })
     .filter(x=>{
-      const phone=String(x.client.whatsapp||'');
-      const phoneDigits=phone.replace(/\D+/g,'');
-      const blob=[x.client.name,phone,x.platform,x.client.profile,x.account?.email,x.account?.provider,x.account?.notes,accountLabel(x.account||{})].join(' ').toLowerCase();
       return !isNoRenewState(x.client.state)
         && renewalAlertDays(x.dd)
         && (!currentFilter || x.platform===currentFilter)
-        && (!q || blob.includes(q) || (qDigits && phoneDigits.includes(qDigits)));
+        && renewalRowMatchesSearch(x,q);
     })
     .sort((a,b)=>(a.dd-b.dd) || friendlyPlatform(a.platform).localeCompare(friendlyPlatform(b.platform)) || (a.client.name||'').localeCompare(b.client.name||''));
 }
@@ -6832,20 +6845,16 @@ function renderFree(){
 function renderRenewals(){
   const currentFilter=$('#renewalAccountFilter')?.value||'';
   const q=($('#renewalSearch')?.value||'').trim().toLowerCase();
-  const qDigits=q.replace(/\D+/g,'');
   renderRenewalFilterOptions(currentFilter);
   const rows=state.clients.map(c=>{
     const account=state.accounts.find(a=>a.id===c.accountId);
     return {client:c,account,platform:c.platform || account?.platform || '',dd:daysUntil(c.dueDate),st:effectiveClientState(c)};
   })
     .filter(x=>{
-      const phone=String(x.client.whatsapp||'');
-      const phoneDigits=phone.replace(/\D+/g,'');
-      const blob=[x.client.name,phone,x.platform,x.client.profile,x.account?.email,x.account?.provider,x.account?.notes,accountLabel(x.account||{})].join(' ').toLowerCase();
       return x.st!=='No renovó'
         && renewalAlertDays(x.dd)
         && (!currentFilter || x.platform===currentFilter)
-        && (!q || blob.includes(q) || (qDigits && phoneDigits.includes(qDigits)));
+        && renewalRowMatchesSearch(x,q);
     })
     .sort((a,b)=>(a.dd-b.dd) || friendlyPlatform(a.platform).localeCompare(friendlyPlatform(b.platform)) || (a.client.name||'').localeCompare(b.client.name||''));
   const expiredCount=rows.filter(x=>x.dd<0).length;

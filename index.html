@@ -2353,6 +2353,16 @@ select option:checked{
   background:rgba(4,8,16,.42);
 }
 table{width:100%;border-collapse:separate;border-spacing:0;min-width:900px}
+.clients-view table{min-width:1260px;table-layout:fixed}
+.clients-view table col:nth-child(1){width:21%}
+.clients-view table col:nth-child(2){width:14%}
+.clients-view table col:nth-child(3){width:10%}
+.clients-view table col:nth-child(4){width:22%}
+.clients-view table col:nth-child(5){width:7%}
+.clients-view table col:nth-child(6){width:5%}
+.clients-view table col:nth-child(7){width:6%}
+.clients-view table col:nth-child(8){width:8%}
+.clients-view table col:nth-child(9){width:7%}
 thead th{
   position:sticky;top:0;z-index:1;
   padding:13px 14px;
@@ -2376,9 +2386,9 @@ tbody tr:hover td{background:rgba(255,255,255,.02)}
 .name{font-weight:800;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:12px;margin-top:3px}
 .copy-inline{
-  display:inline-flex;align-items:center;gap:6px;max-width:100%;
+  display:flex;align-items:center;gap:7px;width:100%;min-width:0;
 }
-.copy-inline > span{min-width:0;overflow-wrap:anywhere}
+.copy-inline > span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .copy-inline-btn{
   width:30px;height:30px;flex:0 0 30px;padding:0;
   display:inline-grid;place-items:center;
@@ -4796,6 +4806,9 @@ html[data-theme="light"] #authLoader > div > div:nth-child(2){color:var(--muted)
         
         <div class="table-wrap">
           <table>
+            <colgroup>
+              <col><col><col><col><col><col><col><col><col>
+            </colgroup>
             <thead>
               <tr>
                 <th>Cliente</th>
@@ -6525,7 +6538,7 @@ function renderClients(){
     const st=effectiveClientState(c);
     const platform=c.platform||account?.platform||'';
     const phone=String(c.whatsapp||'').trim();
-    const accountName=account ? accountLabel(account) : '-';
+    const accountName=String(account?.email||accountLabel(account||{})||'-');
     return `<tr>
       <td>
         <div class="client-name-cell">
@@ -6534,14 +6547,14 @@ function renderClients(){
           ${c.notes?`<div class="sub">${escapeHtml(c.notes)}</div>`:''}
         </div>
       </td>
-      <td>${phone ? `<div class="copy-inline"><span>${escapeHtml(phone)}</span><button type="button" class="copy-inline-btn" title="Copiar número" aria-label="Copiar número" onclick="copyClientWhatsapp('${c.id}',this)"><i data-lucide="copy"></i></button></div>` : '-'}</td>
+      <td>${phone ? `<div class="copy-inline"><span title="${escapeAttr(phone)}">${escapeHtml(phone)}</span><button type="button" class="copy-inline-btn" title="Copiar número" aria-label="Copiar número" onclick="copyClientWhatsapp('${c.id}',this)"><i data-lucide="copy"></i></button></div>` : '-'}</td>
       <td>
         <div style="display:flex;align-items:center;gap:6px">
           ${platformLogo(platform,'chip')}
           <span style="font-weight:700;font-size:13px">${escapeHtml(platform||'-')}</span>
         </div>
       </td>
-      <td>${account?.email ? `<div class="copy-inline"><span>${escapeHtml(accountName)}</span><button type="button" class="copy-inline-btn" title="Copiar correo" aria-label="Copiar correo" onclick="copyClientAccountEmail('${account.id}',this)"><i data-lucide="copy"></i></button></div>` : escapeHtml(accountName)}</td>
+      <td>${account?.email ? `<div class="copy-inline"><span title="${escapeAttr(accountName)}">${escapeHtml(accountName)}</span><button type="button" class="copy-inline-btn" title="Copiar correo" aria-label="Copiar correo" onclick="copyClientAccountEmail('${account.id}',this)"><i data-lucide="copy"></i></button></div>` : escapeHtml(accountName)}</td>
       <td>${escapeHtml(c.profile||'')}</td>
       <td>${escapeHtml(c.pin||'-')}</td>
       <td>${fmtDate(c.dueDate)}</td>

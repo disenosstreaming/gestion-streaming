@@ -1892,6 +1892,21 @@ select option:checked{
   background:#101a2c;
   box-shadow:0 20px 55px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.04);
 }
+.select-search{
+  position:sticky;top:-7px;z-index:2;
+  display:flex;align-items:center;gap:8px;
+  margin:-7px -7px 3px;padding:9px 8px 7px;
+  background:#101a2c;border-bottom:1px solid rgba(148,163,184,.14);
+}
+.select-search i{width:16px;height:16px;flex:0 0 16px;color:#9eacf0}
+.select-search input{
+  width:100%;min-width:0;height:35px;padding:0 10px;
+  border:1px solid rgba(148,163,184,.25);border-radius:9px;
+  color:#edf3ff;background:rgba(4,10,20,.54);font:inherit;font-size:13px;font-weight:650;
+}
+.select-search input::placeholder{color:#7f91ad}
+.select-search input:focus{outline:none;border-color:rgba(124,109,255,.68);box-shadow:0 0 0 3px rgba(124,109,255,.12)}
+.select-search-empty{padding:14px 8px;color:var(--muted);font-size:13px;text-align:center}
 .select-option{
   width:100%;
   min-height:40px;
@@ -4425,6 +4440,10 @@ html[data-theme="light"] .select-popover{
   border-color:rgba(33,47,71,.18);
   box-shadow:0 20px 48px rgba(44,57,78,.22),inset 0 1px 0 rgba(255,255,255,.8);
 }
+html[data-theme="light"] .select-search{background:#f3f6f9;border-color:rgba(33,47,71,.14)}
+html[data-theme="light"] .select-search i{color:#5d69bb}
+html[data-theme="light"] .select-search input{color:#27354e;background:#fff;border-color:rgba(33,47,71,.22)}
+html[data-theme="light"] .select-search input::placeholder{color:#738198}
 html[data-theme="light"] .select-option{color:#344158}
 html[data-theme="light"] .select-option:hover,
 html[data-theme="light"] .select-option:focus-visible{background:rgba(102,87,223,.10);color:#251b68}
@@ -4996,7 +5015,7 @@ html[data-theme="light"] #authLoader > div > div:nth-child(2){color:var(--muted)
       <label>WhatsApp<span class="field-control"><i data-lucide="phone"></i><input class="input" id="cWhatsapp" placeholder="974834197" /></span></label>
       <div class="existing-client-suggestions" id="existingClientSuggestions" hidden aria-live="polite"></div>
       <div class="form-group-label"><i data-lucide="key-round"></i>Cuenta y plataforma</div>
-      <label>Cuenta madre<span class="field-control"><i data-lucide="building-2"></i><select class="select" id="cAccount"></select></span></label>
+      <label>Cuenta madre<span class="field-control"><i data-lucide="building-2"></i><select class="select" id="cAccount" data-searchable="true" data-search-placeholder="Buscar correo o plataforma..."></select></span></label>
       <label>Plataforma<span class="field-control"><i data-lucide="monitor"></i><select class="select" id="cPlatform"></select></span></label>
       <label class="checkline full client-full-sale-toggle"><input type="checkbox" id="cFullAccountSale" /><span class="switch-ui" aria-hidden="true"></span><span><strong>Vendo la cuenta completa</strong><small>Activa esta opción si el cliente recibe la cuenta completa.</small></span></label>
       <label class="checkline full client-full-sale-toggle"><input type="checkbox" id="cActivationByCode" /><span class="switch-ui" aria-hidden="true"></span><span><strong>Activar por codigo</strong><small>No envia correo, contrasena, perfil ni PIN; pide el codigo de pantalla.</small></span></label>
@@ -8682,6 +8701,36 @@ refresh();
     const { select, popover } = context;
     popover.replaceChildren();
     const options = [...select.options];
+    const searchable = select.dataset.searchable === 'true';
+    const query = String(context.query || '').trim().toLowerCase();
+    if(searchable){
+      const search = document.createElement('div');
+      search.className = 'select-search';
+      const icon = document.createElement('i');
+      icon.setAttribute('data-lucide','search');
+      icon.setAttribute('aria-hidden','true');
+      const input = document.createElement('input');
+      input.type = 'search';
+      input.placeholder = select.dataset.searchPlaceholder || 'Buscar...';
+      input.value = context.query || '';
+      input.setAttribute('aria-label',input.placeholder);
+      input.addEventListener('input',()=>{
+        context.query=input.value;
+        renderOptions(context);
+        requestAnimationFrame(()=>context.popover.querySelector('.select-search input')?.focus());
+      });
+      input.addEventListener('keydown',event=>{
+        if(event.key === 'ArrowDown'){
+          event.preventDefault();
+          focusOption(context,1);
+        }else if(event.key === 'Escape'){
+          event.preventDefault();
+          closeSelect({restoreFocus:true});
+        }
+      });
+      search.append(icon,input);
+      popover.appendChild(search);
+    }
     if(!options.length){
       const empty = document.createElement('div');
       empty.className = 'select-empty';
@@ -8690,20 +8739,24 @@ refresh();
       positionPopover(context);
       return;
     }
+    let visibleOptions=0;
     options.forEach((option,index)=>{
       if(option.hidden) return;
+      const optionText=option.textContent.trim();
+      if(query && option.value && !optionText.toLowerCase().includes(query)) return;
+      visibleOptions++;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'select-option';
       button.setAttribute('role','option');
       button.setAttribute('aria-selected',String(index === select.selectedIndex));
       button.disabled = option.disabled;
-      button.title = option.textContent.trim();
+      button.title = optionText;
       button.classList.toggle('is-selected',index === select.selectedIndex);
       button.classList.toggle('is-placeholder',option.value === '');
       const label = document.createElement('span');
       label.className = 'select-option-label';
-      label.textContent = option.textContent.trim();
+      label.textContent = optionText;
       const check = document.createElement('i');
       check.className = 'select-option-check';
       check.setAttribute('data-lucide','check');
@@ -8732,6 +8785,12 @@ refresh();
       });
       popover.appendChild(button);
     });
+    if(!visibleOptions){
+      const empty=document.createElement('div');
+      empty.className='select-search-empty';
+      empty.textContent='No se encontraron cuentas';
+      popover.appendChild(empty);
+    }
     window.lucide?.createIcons?.();
     positionPopover(context);
   }
@@ -8739,6 +8798,7 @@ refresh();
   function openSelect(select,{keyboard = false} = {}){
     const shell = select.closest('.select-shell');
     const trigger = shell?.querySelector('.select-trigger');
+    const searchable = select.dataset.searchable === 'true';
     if(!shell || !trigger || select.disabled) return;
     if(activeSelect?.select === select){ closeSelect(); return; }
     closeSelect();
@@ -8748,12 +8808,13 @@ refresh();
     popover.id = `${select.id || 'select'}-options-${Math.random().toString(36).slice(2,7)}`;
     popover.setAttribute('role','listbox');
     document.body.appendChild(popover);
-    activeSelect = {select,shell,trigger,popover};
+    activeSelect = {select,shell,trigger,popover,query:''};
     shell.classList.add('is-open');
     trigger.setAttribute('aria-expanded','true');
     trigger.setAttribute('aria-controls',popover.id);
     renderOptions(activeSelect);
-    if(keyboard) requestAnimationFrame(()=>focusOption(activeSelect,'selected'));
+    if(searchable) requestAnimationFrame(()=>popover.querySelector('.select-search input')?.focus());
+    else if(keyboard) requestAnimationFrame(()=>focusOption(activeSelect,'selected'));
   }
 
   function enhanceSelect(select){

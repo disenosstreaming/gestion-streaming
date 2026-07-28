@@ -6455,9 +6455,16 @@ function renderClients(){
   const matchesFilters=c=>{
     const account=state.accounts.find(a=>a.id===c.accountId);
     const platform=(c.platform||account?.platform||'').toLowerCase();
-    const blob=[c.name,c.whatsapp,platform,account?.provider,account?.email,c.profile].join(' ').toLowerCase();
+    const accountEmail=String(account?.email||'').trim().toLowerCase();
+    const phone=String(c.whatsapp||'');
+    const isPhoneQuery=q && /^[+\d\s().-]+$/.test(q);
+    const queryDigits=isPhoneQuery?q.replace(/\D+/g,''):'';
+    const phoneDigits=isPhoneQuery?phone.replace(/\D+/g,''):'';
+    const blob=[c.name,phone,platform,account?.provider,accountEmail,c.profile].join(' ').toLowerCase();
+    const matchesSearch=!q
+      || (q.includes('@') ? accountEmail===q : isPhoneQuery ? (queryDigits.length>0 && phoneDigits.includes(queryDigits)) : blob.includes(q));
     const st=effectiveClientState(c);
-    return (!q || blob.includes(q)) && (!f || st===f) && (!af || c.accountId===af);
+    return matchesSearch && (!f || st===f) && (!af || c.accountId===af);
   };
   const allRows=state.clients.filter(matchesFilters).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
   const tableRows=f==='No renovó' ? allRows : allRows.filter(c=>!isNoRenewState(c.state));

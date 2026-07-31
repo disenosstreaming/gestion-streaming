@@ -4819,7 +4819,7 @@ html[data-theme="light"] #authLoader > div > div:nth-child(2){color:var(--muted)
               <option value="Vencido">Vencido</option>
               <option value="No renovó">No renovó</option>
             </select>
-            <select class="select" id="clientAccountFilter"><option value="">Todas las cuentas</option></select>
+            <select class="select" id="clientPlatformFilter" aria-label="Filtrar por categoría"><option value="">Todas las categorías</option></select>
           </div>
         </div>
         
@@ -5351,9 +5351,9 @@ function focusClientAfterSale(client){
   switchView('clientesView');
   const search=document.getElementById('clientSearch');
   const status=document.getElementById('clientStatusFilter');
-  const account=document.getElementById('clientAccountFilter');
+  const platform=document.getElementById('clientPlatformFilter');
   if(status) status.value='';
-  if(account) account.value='';
+  if(platform) platform.value='';
   if(search) search.value=client&&(client.whatsapp||client.name)||'';
   renderClients();
   window.syncEnhancedSelects?.();
@@ -6509,9 +6509,12 @@ function renderAccountOptions(selectedId='', platform=''){
     }).join('');
   $('#cAccount').innerHTML=`<option value="">Elige una cuenta</option>${options}`;
 }
-function renderClientFilterOptions(selectedId=''){
-  $('#clientAccountFilter').innerHTML=`<option value="">Todas las cuentas</option>${sortedAccountsForPick().map(a=>`<option value="${a.id}">${escapeHtml(accountLabel(a))}</option>`).join('')}`;
-  $('#clientAccountFilter').value=selectedId||'';
+function renderClientPlatformFilterOptions(selectedPlatform=''){
+  const platforms=orderedPlatforms(state.accounts);
+  const filter=$('#clientPlatformFilter');
+  if(!filter) return;
+  filter.innerHTML=`<option value="">Todas las categorías</option>${platforms.map(platform=>`<option value="${escapeAttr(platform)}">${escapeHtml(friendlyPlatform(platform))}</option>`).join('')}`;
+  filter.value=platforms.includes(selectedPlatform)?selectedPlatform:'';
 }
 function renderRenewalFilterOptions(selectedId=''){
   const filter=$('#renewalAccountFilter');
@@ -6530,11 +6533,11 @@ function renderRenewalFilterOptions(selectedId=''){
 }
 
 function renderClients(){
-  const currentFilter=$('#clientAccountFilter').value||'';
-  renderClientFilterOptions(currentFilter);
+  const currentFilter=$('#clientPlatformFilter').value||'';
+  renderClientPlatformFilterOptions(currentFilter);
   const q=$('#clientSearch').value.trim().toLowerCase();
   const f=$('#clientStatusFilter').value;
-  const af=$('#clientAccountFilter').value;
+  const pf=$('#clientPlatformFilter').value;
   const matchesFilters=c=>{
     const account=state.accounts.find(a=>a.id===c.accountId);
     const platform=(c.platform||account?.platform||'').toLowerCase();
@@ -6547,7 +6550,7 @@ function renderClients(){
     const matchesSearch=!q
       || (q.includes('@') ? accountEmail===q : isPhoneQuery ? (queryDigits.length>0 && phoneDigits.includes(queryDigits)) : blob.includes(q));
     const st=effectiveClientState(c);
-    return matchesSearch && (!f || st===f) && (!af || c.accountId===af);
+    return matchesSearch && (!f || st===f) && (!pf || (c.platform||account?.platform||'')===pf);
   };
   const allRows=state.clients.filter(matchesFilters).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
   const tableRows=f==='No renovó' ? allRows : allRows.filter(c=>!isNoRenewState(c.state));
@@ -7751,7 +7754,17 @@ window.setNoRenew=async(id)=>{
 };
 window.restoreClient=async(id)=>{ const c=state.clients.find(x=>x.id===id); if(!c) return; const updated={...c,state:'Activo',dueDate:c.dueDate||todayPlus(30),updatedAt:new Date().toISOString()}; const ok=await persistDoc('clients', updated); if(!ok) return; Object.assign(c, updated); touchLocalStateCache(); refreshUI(); };
 window.prefillClientFromAccount=(id,forcedProfile='')=>{ clearClientForm(); const acc=state.accounts.find(a=>a.id===id); renderClientPlatformOptions(acc?.platform||'',id); renderAccountOptions(id,acc?.platform||''); $('#cAccount').value=id; $('#cProfile').value=forcedProfile||nextProfileSuggestion(id)||''; applyDefaultClientPrices(acc?.platform||''); switchView('clientesView'); openModal('clientModalWrap'); initDatepickers(); };
-window.viewAccountClients=(id)=>{ switchView('clientesView'); const f=$('#clientAccountFilter'); if(f){ f.value=id; renderClients(); window.syncEnhancedSelects?.(); } window.scrollTo({top:0,behavior:'smooth'}); };
+window.viewAccountClients=(id)=>{
+  const account=state.accounts.find(a=>a.id===id);
+  switchView('clientesView');
+  const search=$('#clientSearch');
+  const platform=$('#clientPlatformFilter');
+  if(search) search.value=account?.email||'';
+  if(platform) platform.value=account?.platform||'';
+  renderClients();
+  window.syncEnhancedSelects?.();
+  window.scrollTo({top:0,behavior:'smooth'});
+};
 function accountMatchesComboPlatform(account, platform){
   const a=String(account?.platform||'').toLowerCase().replace(/[+\s]/g,'');
   const p=String(platform||'').toLowerCase().replace(/[+\s]/g,'');
@@ -8200,7 +8213,7 @@ $$('.modal-backdrop').forEach(wrap=>{
 $$('.nav-btn').forEach(btn=>btn.onclick=()=>switchView(btn.dataset.view));
 $('#clientSearch').oninput=renderClients;
 $('#clientStatusFilter').onchange=renderClients;
-$('#clientAccountFilter').onchange=renderClients;
+$('#clientPlatformFilter').onchange=renderClients;
 $('#renewalSearch').oninput=renderRenewals;
 $('#renewalAccountFilter').onchange=renderRenewals;
 $('#accountSearch').oninput=renderAccounts;
@@ -8621,7 +8634,7 @@ $('#exportBtn').onclick=()=>downloadGestorExcel();
 // ===== CARGA MASIVA DE CUENTAS MADRE =====
 setToday();
 renderAccountOptions();
-renderClientFilterOptions();
+renderClientPlatformFilterOptions();
 refresh();
 </script>
 <script>

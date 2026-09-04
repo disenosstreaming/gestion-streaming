@@ -723,6 +723,19 @@ function sanitizeGestorDocForFirestore(colName, data) {
 
 // â”€â”€ Persistir: escribe solo lo que cambio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.__persistDebounceTimer = null;
+async function bumpInventoryRevision(uid, reason = 'write') {
+  const revision = new Date().toISOString();
+  await setDoc(managerMetaRef(uid), {
+    inventoryRevision: revision,
+    updatedAt: revision,
+    reason: String(reason || 'write').slice(0, 80)
+  }, { merge: true });
+  try {
+    localStorage.setItem('gestion_streaming_v5_revision', revision);
+    window.__setLocalInventoryRevision?.(revision);
+  } catch (_) {}
+  return revision;
+}
 window.__persistToFirestore = async function(stateData) {
   const user = auth.currentUser;
   if (!user) { window.__saving = false; return; }
@@ -788,6 +801,7 @@ window.__persistToFirestore = async function(stateData) {
         await batch.commit();
       }
 
+      await bumpInventoryRevision(uid, 'full-state-sync');
       notifySaveStatus('success', 'Cambios sincronizados correctamente.');
     } catch (err) {
       console.error('âŒ Error guardando en Firebase:', err);
@@ -821,9 +835,9 @@ window.__persistSingleDoc = async function(colName, docData) {
     for (const update of availabilityUpdates) {
       batch.set(doc(accountsCol(uid), update.accountId), update.fields, { merge: true });
     }
-    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision }, { merge: true });
+    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision, reason: colName === 'accounts' ? 'account-write' : 'client-write' }, { merge: true });
     await batch.commit();
-    try { localStorage.setItem('gestion_streaming_v5_revision', revision); } catch (_) {}
+    try { localStorage.setItem('gestion_streaming_v5_revision', revision); window.__setLocalInventoryRevision?.(revision); } catch (_) {}
     notifySaveStatus('success', colName === 'accounts' ? 'Cuenta madre guardada.' : 'Cliente guardado.');
     return true;
   } catch (err) {
@@ -852,9 +866,9 @@ window.__persistDeleteDoc = async function(colName, docId) {
     for (const update of availabilityUpdates) {
       batch.set(doc(accountsCol(uid), update.accountId), update.fields, { merge: true });
     }
-    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision }, { merge: true });
+    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision, reason: colName === 'accounts' ? 'account-delete' : 'client-delete' }, { merge: true });
     await batch.commit();
-    try { localStorage.setItem('gestion_streaming_v5_revision', revision); } catch (_) {}
+    try { localStorage.setItem('gestion_streaming_v5_revision', revision); window.__setLocalInventoryRevision?.(revision); } catch (_) {}
     notifySaveStatus('success', 'Dato eliminado correctamente.');
     return true;
   } catch (err) {
@@ -869,7 +883,13 @@ window.__persistSettingsDoc = async function(settingsData) {
   if (!user) return false;
   try {
     notifySaveStatus('saving', 'Guardando ajustes...');
-    await setDoc(settingsRef(user.uid), sanitizeGestorSettingsForFirestore(settingsData || {}), { merge: true });
+    const uid = user.uid;
+    const batch = writeBatch(db);
+    const revision = new Date().toISOString();
+    batch.set(settingsRef(uid), sanitizeGestorSettingsForFirestore(settingsData || {}), { merge: true });
+    batch.set(managerMetaRef(uid), { inventoryRevision: revision, updatedAt: revision, reason: 'settings-write' }, { merge: true });
+    await batch.commit();
+    try { localStorage.setItem('gestion_streaming_v5_revision', revision); window.__setLocalInventoryRevision?.(revision); } catch (_) {}
     notifySaveStatus('success', 'Ajustes guardados.');
     return true;
   } catch (err) {
@@ -894,6 +914,7 @@ window.__persistManyDocs = async function(colName, docsData) {
       }
       await batch.commit();
     }
+    await bumpInventoryRevision(uid, colName === 'accounts' ? 'accounts-bulk-write' : 'clients-bulk-write');
     notifySaveStatus('success', 'Datos guardados correctamente.');
     return true;
   } catch (err) {
@@ -5410,6 +5431,8 @@ function focusClientAfterSale(client){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 const KEY='gestion_streaming_v5';
+const LOCAL_SYNC_CHANNEL='gestion_streaming_local_sync_v2';
+const TAB_ID=`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
 const DEFAULT_FINAL_MESSAGE='Gracias por tu compra. Cualquier duda me escribes.';
@@ -5444,6 +5467,14 @@ const PLATFORM_URLS={
 const MAX_ACCOUNTS_PER_IMPORT=500;
 const MAX_CLIENTS_PER_IMPORT=3000;
 let state=load();
+let localSyncChannel=null;
+try { localSyncChannel = 'BroadcastChannel' in window ? new BroadcastChannel(LOCAL_SYNC_CHANNEL) : null; } catch(e) { localSyncChannel = null; }
+window.__lastRemoteInventoryRevision = localStorage.getItem(KEY + '_revision') || '';
+window.__setLocalInventoryRevision=function(revision){
+  if(!revision) return;
+  window.__lastRemoteInventoryRevision=String(revision);
+  try { localStorage.setItem(KEY + '_revision', String(revision)); } catch(e){}
+};
 let selectedFreePlatform=null;
 let editingClientId=null;
 let selectedExistingClientCustomerId='';
@@ -5482,6 +5513,10 @@ function normalizeLoaded(data){
   }));
   data.financeMovements=(data.financeMovements||[]).map(m=>normalizeFinanceMovement(m)).filter(Boolean);
   data.financeMovementsFullLoaded=data.financeMovementsFullLoaded===true;
+  data.__localUpdatedAt=Number(data.__localUpdatedAt||0)||0;
+  data.__localRevision=String(data.__localRevision||'').slice(0,80);
+  data.__localSource=String(data.__localSource||'').slice(0,80);
+  data.__localReason=String(data.__localReason||'').slice(0,80);
   let paymentMethods=[];
   if(Array.isArray(data.settings?.paymentMethods)) paymentMethods=data.settings.paymentMethods;
   else if(typeof data.settings?.paymentMethods==='string' && data.settings.paymentMethods.trim()) paymentMethods=[{method:'Pago',number:data.settings.paymentMethods.trim(),holder:''}];
@@ -5495,8 +5530,8 @@ function normalizeLoaded(data){
 window.__loadFromFirestore = function(data){
   window.__loadingFromFirestore = true;
   state = normalizeLoaded(JSON.parse(JSON.stringify(data)));
-  // Actualizar localStorage como respaldo
-  try { localStorage.setItem(KEY, JSON.stringify(state)); localStorage.setItem(KEY + '_synced_at', String(Date.now())); } catch(e){}
+  // Actualizar localStorage como respaldo y avisar a otras pestañas sin leer Firebase.
+  touchLocalStateCache('firestore-load', { broadcast: true });
   updateExpiredSummary();
   refresh();
   window.__loadingFromFirestore = false;
@@ -5529,8 +5564,53 @@ window.retryFinanceHistoryLoad=function(){
   state.financeMovementsFullLoadError=false;
   renderFinance();
 };
-function touchLocalStateCache(){
-  try { localStorage.setItem(KEY, JSON.stringify(state)); localStorage.setItem(KEY + '_synced_at', String(Date.now())); } catch(e){}
+function stampLocalState(reason='local'){
+  const now=Date.now();
+  state.__localUpdatedAt=now;
+  state.__localRevision=`${now}-${TAB_ID}`;
+  state.__localSource=TAB_ID;
+  state.__localReason=String(reason||'local').slice(0,80);
+  return state.__localRevision;
+}
+function broadcastLocalState(reason, revision){
+  if(!localSyncChannel || window.__loadingFromFirestore) return;
+  try { localSyncChannel.postMessage({type:'state-updated',source:TAB_ID,revision,reason}); } catch(e){}
+}
+function applyIncomingLocalState(raw, origin='otra pestaña'){
+  if(!raw) return false;
+  const incoming=normalizeLoaded(JSON.parse(JSON.stringify(raw)));
+  const incomingAt=Number(incoming.__localUpdatedAt||0)||0;
+  const currentAt=Number(state.__localUpdatedAt||0)||0;
+  if(!incomingAt || incomingAt<=currentAt || incoming.__localSource===TAB_ID) return false;
+  state=incoming;
+  updateExpiredSummary();
+  if(typeof refreshUI==='function') refreshUI(); else refresh();
+  notifySaveStatus('success', `Sincronizado desde ${origin}.`);
+  return true;
+}
+function readIncomingStateFromCache(origin='otra pestaña'){
+  try { return applyIncomingLocalState(JSON.parse(localStorage.getItem(KEY)||'null'), origin); } catch(e){ return false; }
+}
+window.addEventListener('storage', event=>{
+  if(event.key===KEY && event.newValue) {
+    try { applyIncomingLocalState(JSON.parse(event.newValue), 'otra pestaña'); } catch(e){}
+  }
+  if(event.key===KEY + '_revision' && event.newValue) window.__lastRemoteInventoryRevision=String(event.newValue);
+});
+if(localSyncChannel){
+  localSyncChannel.onmessage=event=>{
+    const data=event.data||{};
+    if(data.type==='state-updated' && data.source!==TAB_ID) readIncomingStateFromCache('otra pestaña');
+  };
+}
+function touchLocalStateCache(reason='local', options={}){
+  try {
+    const revision=stampLocalState(reason);
+    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(KEY + '_synced_at', String(Date.now()));
+    if(window.__lastRemoteInventoryRevision) localStorage.setItem(KEY + '_revision', window.__lastRemoteInventoryRevision);
+    if(options.broadcast!==false) broadcastLocalState(reason, revision);
+  } catch(e){}
 }
 // â”€â”€ Guardar UN solo documento (1-2 ops en vez de 468) â”€â”€
 function persistDoc(colName, docData){
@@ -8078,6 +8158,7 @@ window.sendWhatsapp=(id,context='',targetWindow=null)=>{
       c.updatedAt=new Date().toISOString();
       persistDoc('clients', c);
     });
+    touchLocalStateCache('renewal-whatsapp-notice');
     refreshUI();
   }
 };

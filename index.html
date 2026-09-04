@@ -608,6 +608,7 @@ function sanitizeGestorAccountForFirestore(data = {}) {
     capacity,
     dueDate: fsOptionalString(data.dueDate, 20),
     notes: fsOptionalString(data.notes, 1000),
+    renewalMessage: fsOptionalString(data.renewalMessage, 1200),
     category: fsOptionalString(data.category, 120),
     purchaseCost,
     purchaseCostRegistered: purchaseCost > 0 || data.purchaseCostRegistered === true,
@@ -669,7 +670,9 @@ function sanitizeGestorSettingsForFirestore(settings = {}) {
       platformPrices[fsString(key, 120, 'Plataforma')] = {
         salePrice: Math.max(0, Number(row.salePrice || 0)),
         renewalPrice: Math.max(0, Number(row.renewalPrice || 0)),
-        purchaseCost: Math.max(0, Number(row.purchaseCost || 0))
+        purchaseCost: Math.max(0, Number(row.purchaseCost || 0)),
+        renewalPlansText: fsOptionalString(row.renewalPlansText, 500),
+        renewalMessage: fsOptionalString(row.renewalMessage, 1200)
       };
     });
   }
@@ -3449,7 +3452,7 @@ label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mute
 .price-table-head,
 .price-row{
   display:grid;
-  grid-template-columns:minmax(260px,2fr) repeat(3,minmax(150px,1fr));
+  grid-template-columns:minmax(220px,1.4fr) repeat(3,minmax(120px,.7fr)) minmax(300px,1.8fr);
   gap:16px;
   align-items:center;
 }
@@ -3521,6 +3524,21 @@ label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mute
   border-color:rgba(59,130,246,.75)!important;
   box-shadow:0 0 0 3px rgba(59,130,246,.15)!important;
   background:rgba(15,23,42,.95)!important;
+}
+.renewal-template-stack{
+  display:grid;
+  gap:8px;
+}
+.renewal-plans-input,
+.renewal-message-input{
+  height:auto!important;
+  min-height:72px!important;
+  padding:12px 14px!important;
+  resize:vertical;
+  line-height:1.35;
+}
+.renewal-message-input{
+  min-height:124px!important;
 }
 #settingsModalWrap.prices-mode .modal-actions{
   margin:26px -30px -30px;
@@ -4212,7 +4230,22 @@ i[data-lucide="chevron-down"]::before{content:"\2304"}
     height:46px;
     min-height:46px;
   }
-  #settingsModalWrap.prices-mode .modal-actions{
+  .renewal-template-stack{
+  display:grid;
+  gap:8px;
+}
+.renewal-plans-input,
+.renewal-message-input{
+  height:auto!important;
+  min-height:72px!important;
+  padding:12px 14px!important;
+  resize:vertical;
+  line-height:1.35;
+}
+.renewal-message-input{
+  min-height:124px!important;
+}
+#settingsModalWrap.prices-mode .modal-actions{
     position:static;
     margin:20px -18px 0!important;
     padding:14px 18px calc(18px + env(safe-area-inset-bottom,0px))!important;
@@ -4513,7 +4546,22 @@ html[data-theme="light"] #clientModalWrap .existing-client-option{background:#ff
 html[data-theme="light"] #clientModalWrap .existing-client-option:hover{background:#f3f0ff;border-color:rgba(94,69,210,.34)}
 html[data-theme="light"] #clientModalWrap .existing-client-selected{color:#087d5d}
 html[data-theme="light"] #clientModalWrap .modal-actions,
-html[data-theme="light"] #settingsModalWrap.prices-mode .modal-actions{background:rgba(226,232,240,.44)}
+html[data-theme="light"] .renewal-template-stack{
+  display:grid;
+  gap:8px;
+}
+.renewal-plans-input,
+.renewal-message-input{
+  height:auto!important;
+  min-height:72px!important;
+  padding:12px 14px!important;
+  resize:vertical;
+  line-height:1.35;
+}
+.renewal-message-input{
+  min-height:124px!important;
+}
+#settingsModalWrap.prices-mode .modal-actions{background:rgba(226,232,240,.44)}
 html[data-theme="light"] #comboForm .modal-actions.full{
   background:linear-gradient(to top,rgba(237,241,246,1) 80%,rgba(237,241,246,0));
 }
@@ -5061,6 +5109,7 @@ html[data-theme="light"] #authLoader > div > div:nth-child(2){color:var(--muted)
       <div class="form-group-label" data-finance-only><i data-lucide="wallet"></i>Costo</div>
       <label data-finance-only>Costo compra<span class="field-control"><i data-lucide="badge-dollar-sign"></i><input class="input" type="number" min="0" step="0.01" id="aPurchaseCost" placeholder="0.00" /></span></label>
       <label class="checkline" data-finance-only><input type="checkbox" id="aPurchaseCostRegistered" /> Registrar como gasto</label>
+      <label class="full">Mensaje de renovacion de esta cuenta<span class="field-control textarea-control"><i data-lucide="message-square-text"></i><textarea id="aRenewalMessage" placeholder="Opcional. Si lo dejas vacio, se usa el mensaje de la plataforma."></textarea></span></label>
       <label class="full">Notas<span class="field-control textarea-control"><i data-lucide="message-square-text"></i><textarea id="aNotes" placeholder="Opcional"></textarea></span></label>
     </div>
     <div class="modal-actions">
@@ -5236,6 +5285,7 @@ html[data-theme="light"] #authLoader > div > div:nth-child(2){color:var(--muted)
               <span>Venta</span>
               <span>Renovación</span>
               <span>Costo compra</span>
+                          <span>Renovacion WhatsApp</span>
             </div>
             <div class="payment-list platform-price-list" id="platformPriceList"></div>
           </div>
@@ -5420,7 +5470,7 @@ function normalizeLoaded(data){
   data.accounts=(data.accounts||[]).map(a=>({
     id:a.id||uid(), platform:a.platform||'', provider:a.provider||'', providerWhatsapp:a.providerWhatsapp||'',
     capacity:Number(a.capacity||0), email:a.email||'', password:a.password||'', dueDate:a.dueDate||'',
-    notes:a.notes||'', purchaseCost:Number(a.purchaseCost||0), purchaseCostRegistered:a.purchaseCostRegistered===true
+    notes:a.notes||'', renewalMessage:a.renewalMessage||'', purchaseCost:Number(a.purchaseCost||0), purchaseCostRegistered:a.purchaseCostRegistered===true
   }));
   data.clients=(data.clients||[]).map(c=>({
     id:c.id||uid(), customerId:c.customerId||c.id||'', name:c.name||'', whatsapp:c.whatsapp||'', accountId:c.accountId||'', platform:c.platform||'',
@@ -5781,6 +5831,7 @@ function sanitizeAccountForSave(data={}){
     capacity: Math.max(1, Math.min(500, Number(data.capacity || 1))),
     dueDate: String(data.dueDate || '').trim().slice(0,20),
     notes: String(data.notes || '').trim().slice(0,1000),
+    renewalMessage: safeSlice(String(data.renewalMessage || '').trim(),1200),
     purchaseCost,
     purchaseCostRegistered: purchaseCost > 0 || data.purchaseCostRegistered === true,
     createdAt: String(data.createdAt || now).trim().slice(0,40),
@@ -5828,21 +5879,48 @@ function normalizePlatformPrices(value={}, categories=[]){
     Object.entries(value).slice(0,80).forEach(([key,row])=>{
       const label=String(key||'').trim();
       if(!label) return;
-      out[label]={salePrice:moneyNumber(row?.salePrice),renewalPrice:moneyNumber(row?.renewalPrice),purchaseCost:moneyNumber(row?.purchaseCost)};
+      out[label]={
+        salePrice:moneyNumber(row?.salePrice),
+        renewalPrice:moneyNumber(row?.renewalPrice),
+        purchaseCost:moneyNumber(row?.purchaseCost),
+        renewalPlansText:safeSlice(String(row?.renewalPlansText ?? defaultRenewalPlansFor(label)).trim(),500),
+        renewalMessage:safeSlice(String(row?.renewalMessage ?? defaultRenewalMessageFor(label)).trim(),1200)
+      };
     });
   }
   (categories||[]).forEach(cat=>{
     const label=String(cat||'').trim();
-    if(label && !out[label]) out[label]={salePrice:0,renewalPrice:0,purchaseCost:0};
+    if(label && !out[label]) out[label]={salePrice:0,renewalPrice:0,purchaseCost:0,renewalPlansText:defaultRenewalPlansFor(label),renewalMessage:defaultRenewalMessageFor(label)};
   });
   return out;
 }
 function platformPriceKey(platform){ return String(platform||'').trim().toLowerCase(); }
+function isVikiPlatform(platform){ return platformPriceKey(platform).includes('viki'); }
+function defaultRenewalPlansFor(platform){
+  if(isVikiPlatform(platform)) return '• 1 mes: S/ 5\n• 3 meses: S/ 13';
+  return '';
+}
+function defaultRenewalMessageFor(platform){
+  if(isVikiPlatform(platform)){
+    return [
+      'Hola {nombre} 👋✨',
+      '',
+      '📌 Tu cuenta de Viki Rakuten {estado}.',
+      '',
+      '🎬 Planes de renovación:',
+      '{planes}',
+      '',
+      'Si deseas renovar, envíame tu comprobante y lo activo al toque ✅',
+      '{medios_pago}'
+    ].join('\n');
+  }
+  return '';
+}
 function platformPriceFor(platform){
   const target=platformPriceKey(platform);
   const prices=state.settings?.platformPrices || {};
   const found=Object.entries(prices).find(([key])=>platformPriceKey(key)===target);
-  return found ? found[1] : {salePrice:0,renewalPrice:0,purchaseCost:0};
+  return found ? normalizePlatformPrices({[found[0]]:found[1]}, [found[0]])[found[0]] : {salePrice:0,renewalPrice:0,purchaseCost:0,renewalPlansText:defaultRenewalPlansFor(platform),renewalMessage:defaultRenewalMessageFor(platform)};
 }
 function excelColumnXml(widths, count){
   const cols=[];
@@ -7220,7 +7298,24 @@ function whatsappText(client){
       '\u2705 Gracias por tu preferencia.'
     ].join('\n');
   }
-  return credentialsText(client, account);
+return credentialsText(client, account);
+}
+function renewalMessageFor(client, account, platform, status, payment){
+  const prices=platformPriceFor(platform);
+  const template=safeSlice(String(account?.renewalMessage || prices.renewalMessage || defaultRenewalMessageFor(platform) || '').trim(),1200);
+  if(!template) return '';
+  const plans=safeSlice(String(prices.renewalPlansText || defaultRenewalPlansFor(platform) || '').trim(),500);
+  return template
+    .replace(/\{nombre\}/gi, client.name || 'amigo')
+    .replace(/\{plataforma\}/gi, platform || 'streaming')
+    .replace(/\{estado\}/gi, status || 'está próxima a vencer')
+    .replace(/\{fecha\}/gi, fmtDateLong(client.dueDate) || client.dueDate || '')
+    .replace(/\{perfil\}/gi, client.profile || '-')
+    .replace(/\{correo\}/gi, account?.email || '-')
+    .replace(/\{pin\}/gi, client.pin || '-')
+    .replace(/\{planes\}/gi, plans || 'Consulta los planes disponibles conmigo.')
+    .replace(/\{medios_pago\}/gi, payment ? `\nMedios de pago:\n${payment}` : '')
+    .trim();
 }
 
 
@@ -7363,6 +7458,10 @@ function renderPlatformPriceRows(){
       <label data-price-label="Venta"><input class="input price-input" data-platform-price="salePrice" data-platform="${escapeAttr(cat)}" type="number" min="0" step="0.01" value="${escapeAttr(row.salePrice||'')}" placeholder="0.00" /></label>
       <label data-price-label="Renovación"><input class="input price-input" data-platform-price="renewalPrice" data-platform="${escapeAttr(cat)}" type="number" min="0" step="0.01" value="${escapeAttr(row.renewalPrice||'')}" placeholder="0.00" /></label>
       <label data-price-label="Costo compra"><input class="input price-input" data-platform-price="purchaseCost" data-platform="${escapeAttr(cat)}" type="number" min="0" step="0.01" value="${escapeAttr(row.purchaseCost||'')}" placeholder="0.00" /></label>
+      <div class="renewal-template-stack" data-price-label="Renovacion WhatsApp">
+        <textarea class="input price-input renewal-plans-input" data-platform-price="renewalPlansText" data-platform="${escapeAttr(cat)}" placeholder="• 1 mes: S/ 5">${escapeHtml(row.renewalPlansText||'')}</textarea>
+        <textarea class="input price-input renewal-message-input" data-platform-price="renewalMessage" data-platform="${escapeAttr(cat)}" placeholder="Mensaje con {nombre}, {estado}, {planes} y {medios_pago}">${escapeHtml(row.renewalMessage||'')}</textarea>
+      </div>
     </div>`;
   }).join('') : `<div class="empty">Crea categorias para configurar precios.</div>`;
 }
@@ -7372,8 +7471,10 @@ function readPlatformPricesFromUI(){
     const platform=input.dataset.platform || '';
     const field=input.dataset.platformPrice;
     if(!platform || !field) return;
-    if(!next[platform]) next[platform]={salePrice:0,renewalPrice:0,purchaseCost:0};
-    next[platform][field]=moneyNumber(input.value);
+    if(!next[platform]) next[platform]={salePrice:0,renewalPrice:0,purchaseCost:0,renewalPlansText:defaultRenewalPlansFor(platform),renewalMessage:defaultRenewalMessageFor(platform)};
+    if(field==='renewalPlansText') next[platform][field]=safeSlice(String(input.value||'').trim(),500);
+    else if(field==='renewalMessage') next[platform][field]=safeSlice(String(input.value||'').trim(),1200);
+    else next[platform][field]=moneyNumber(input.value);
   });
   state.settings.platformPrices=next;
 }
@@ -7507,7 +7608,13 @@ function syncAccountPlatformOptions(selected=''){
   sel.innerHTML=categories.map(p=>`<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('') + '<option value="__new__">+ Agregar categoria</option>';
   if(cur && categories.includes(cur)) sel.value=cur;
 }
-function clearAccountForm(){ editingAccountId=null; syncAccountPlatformOptions(); $('#accountModalTitle').textContent='Nueva cuenta madre'; $('#aPlatformSelect').value=categoryOptions()[0]||'Netflix'; $('#aProvider').value=''; $('#aProviderWhatsapp').value=''; $('#aEmail').value=''; $('#aPassword').value=''; $('#aCapacity').value='5'; const purchaseEl=$('#aPurchaseCost'); if(purchaseEl){ purchaseEl.value=''; purchaseEl.dataset.autoPurchaseCost=''; } $('#aPurchaseCostRegistered').checked=false; applyDefaultAccountPurchaseCost($('#aPlatformSelect').value); $('#aDueDisplay').value=todayPlus(30); $('#aNotes').value=''; const n=$('#aNotifyClients'); if(n) n.checked=true; }
+function updateAccountRenewalPlaceholder(platform){
+  const field=$('#aRenewalMessage');
+  if(!field) return;
+  const template=platformPriceFor(platform).renewalMessage || defaultRenewalMessageFor(platform);
+  field.placeholder=template || 'Opcional. Si lo dejas vacio, se usa el mensaje de la plataforma.';
+}
+function clearAccountForm(){ editingAccountId=null; syncAccountPlatformOptions(); $('#accountModalTitle').textContent='Nueva cuenta madre'; $('#aPlatformSelect').value=categoryOptions()[0]||'Netflix'; $('#aProvider').value=''; $('#aProviderWhatsapp').value=''; $('#aEmail').value=''; $('#aPassword').value=''; $('#aCapacity').value='5'; const purchaseEl=$('#aPurchaseCost'); if(purchaseEl){ purchaseEl.value=''; purchaseEl.dataset.autoPurchaseCost=''; } $('#aPurchaseCostRegistered').checked=false; applyDefaultAccountPurchaseCost($('#aPlatformSelect').value); updateAccountRenewalPlaceholder($('#aPlatformSelect').value); $('#aDueDisplay').value=todayPlus(30); $('#aRenewalMessage').value=''; $('#aNotes').value=''; const n=$('#aNotifyClients'); if(n) n.checked=true; }
 function initDatepickers(){
   flatpickrInstances.forEach(i=>i.destroy());
   flatpickrInstances=[];
@@ -7562,7 +7669,7 @@ window.editAccount=(id, forceNotify=false)=>{
   editingAccountId=id; pendingNotifyAfterSave=!!forceNotify;
   $('#accountModalTitle').textContent=forceNotify ? 'Reemplazar acceso' : 'Editar cuenta madre';
   syncAccountPlatformOptions();
-  $('#aProvider').value=a.provider||''; $('#aProviderWhatsapp').value=a.providerWhatsapp||''; $('#aCapacity').value=a.capacity||5; $('#aPurchaseCost').value=a.purchaseCost||''; $('#aPurchaseCostRegistered').checked=a.purchaseCostRegistered===true; $('#aEmail').value=a.email||''; $('#aPassword').value=a.password||''; $('#aDueDisplay').value=a.dueDate||''; $('#aNotes').value=a.notes||'';
+  $('#aProvider').value=a.provider||''; $('#aProviderWhatsapp').value=a.providerWhatsapp||''; $('#aCapacity').value=a.capacity||5; $('#aPurchaseCost').value=a.purchaseCost||''; $('#aPurchaseCostRegistered').checked=a.purchaseCostRegistered===true; $('#aEmail').value=a.email||''; $('#aPassword').value=a.password||''; $('#aDueDisplay').value=a.dueDate||''; $('#aRenewalMessage').value=a.renewalMessage||''; updateAccountRenewalPlaceholder(a.platform||''); $('#aNotes').value=a.notes||'';
   const notifyEl=$('#aNotifyClients'); if(notifyEl) notifyEl.checked=true;
   if(a.platform && !categoryOptions().includes(a.platform)) addCategory(a.platform);
   syncAccountPlatformOptions(a.platform);
@@ -8247,6 +8354,7 @@ $('#aPlatformSelect').onchange=()=>{
     else syncAccountPlatformOptions();
   }
   applyDefaultAccountPurchaseCost(platform);
+  updateAccountRenewalPlaceholder(platform);
   if(platform==='ViX' && !$('#aCapacity').value) $('#aCapacity').value='5';
 };
 $('#addPaymentBtn').onclick=()=>{ state.settings.paymentMethods.push({method:'',number:'',holder:''}); renderPaymentRows(); };
@@ -8303,7 +8411,7 @@ $('#saveAccountBtn').onclick=async ()=>{
   const financeOn=isFinanceModeEnabled();
   const data=sanitizeAccountForSave({
     id:editingAccountId||uid(), platform, provider:$('#aProvider').value.trim(), providerWhatsapp:$('#aProviderWhatsapp').value.trim(), capacity,
-    email:$('#aEmail').value.trim(), password:$('#aPassword').value.trim(), dueDate:$('#aDueDisplay').value.trim(), notes:$('#aNotes').value.trim(),
+    email:$('#aEmail').value.trim(), password:$('#aPassword').value.trim(), dueDate:$('#aDueDisplay').value.trim(), renewalMessage:$('#aRenewalMessage').value.trim(), notes:$('#aNotes').value.trim(),
     purchaseCost:financeOn ? $('#aPurchaseCost').value : (oldAccount?.purchaseCost || 0), purchaseCostRegistered:financeOn && $('#aPurchaseCostRegistered').checked
   });
   const credentialsChanged=!!oldAccount && (oldAccount.email!==data.email || oldAccount.password!==data.password || oldAccount.platform!==data.platform);

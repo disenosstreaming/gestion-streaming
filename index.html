@@ -5285,7 +5285,7 @@ html[data-theme="light"] #authLoader > div > div:nth-child(2){color:var(--muted)
               <span>Venta</span>
               <span>Renovación</span>
               <span>Costo compra</span>
-                          <span>Renovacion WhatsApp</span>
+              <span>Renovacion WhatsApp</span>
             </div>
             <div class="payment-list platform-price-list" id="platformPriceList"></div>
           </div>
@@ -7223,6 +7223,8 @@ function renewalPaymentLines(){
     .join('\n');
 }
 function renewalOfferLines(platform){
+  const configured=String(platformPriceFor(platform).renewalPlansText || '').trim();
+  if(configured) return configured;
   const p=String(platform||'')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g,'')
@@ -7233,6 +7235,13 @@ function renewalOfferLines(platform){
       'Puedes renovar con estas opciones:',
       '\ud83d\udccc 1 mes \u2192 S/ 6',
       '\ud83d\udccc 3 meses \u2192 S/ 14'
+    ].join('\n');
+  }
+  if(p.includes('viki') || p.includes('rakuten')){
+    return [
+      'Puedes renovar con estas opciones:',
+      '🎬 1 mes → S/ 5',
+      '🎬 3 meses → S/ 13'
     ].join('\n');
   }
   return '';
@@ -7271,6 +7280,8 @@ function whatsappText(client){
         ? `venci\u00f3 el ${fmtDateLong(client.dueDate) || client.dueDate || 'd\u00eda indicado'}`
         : 'est\u00e1 pr\u00f3xima a vencer';
   if(isNoRenewState(client.state) || (dd!==null && dd<=1)){
+    const custom=renewalMessageFor(client, account, platform, status, payment);
+    if(custom) return custom;
     const accessLines=isActivationByCode(client?.activationByCode) || isHboRenewal ? [] : [
       '',
       `\ud83c\udfac Perfil: ${client.profile || '-'}`,
